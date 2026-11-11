@@ -900,23 +900,26 @@ speed_test() { # -> $DL_KBPS, the download speed in kbit/s (-1 failed)
 }
 speed_checker() { # its own background loop, writing "round kbit/s" to
   local seq=0                    # $RES.speed (0 kbit/s = measuring)
+  bg_init                        # $TMPD/busy exists while it downloads
   nap 3                          # after the first pings
-  bg_init
   while kill -0 "$MAIN_PID" 2>/dev/null; do
-    printf '%s\n' "$seq 0" > "$RES.speed"
+    printf '%s\n' "$seq 0" > "$RES.speed.tmp" && mv -f "$RES.speed.tmp" "$RES.speed"
+    : > "$TMPD/busy"
     speed_test; (( seq++ ))
+    rm -f "$TMPD/busy"
     printf '%s\n' "$seq $DL_KBPS" > "$RES.speed.tmp" && mv -f "$RES.speed.tmp" "$RES.speed"
     nap $SPEED_S
   done
 }
 checker() { # the background loop
-  local i j r t0 st lat loss lost sent L seq=0 out lip wifi med need lw
+  local i j r t0 st lat loss lost sent L seq=0 out lip wifi med need lw busy
   local -a ok
   LOSTH=(); ZERO=(); PLAT=(); SLOW=()
   bg_init
   while kill -0 "$MAIN_PID" 2>/dev/null && (( seq < ${1:-0} || ${1:-0} == 0 )); do
-    t0=$SECONDS
-    gateway; if_rate
+    t0=$SECONDS; busy=0
+    [[ -e $TMPD/busy ]] && busy=1   # the speed test fills the line: its delay
+    gateway; if_rate                # and loss are not the link's
     HOSTS=("$INET_TARGET" "$GW" "$INET_ALT")
     for (( i = 0; i < ${#HOSTS[@]}; i++ )); do
       if [[ -n ${HOSTS[i]} ]]; then ping_host "${HOSTS[i]}" > "$TMPD/p$i" 2>&1 &
@@ -924,6 +927,7 @@ checker() { # the background loop
       fi
     done
     wait
+    [[ -e $TMPD/busy ]] && busy=1
     (( seq++ )); lip=""
     if (( WIN )); then lip=$IF_IP
     else if_addr "$GW_IF"; lip=$IFA; fi
@@ -936,16 +940,18 @@ checker() { # the background loop
         r=$P_OK; ping_parse "$TMPD/p$NL"   # (the first one on a tie), so its
         (( P_OK > r )) || ping_parse "$TMPD/p0"  # loss and latency agree
       fi
-      for (( r = LOSS_ROUNDS - 1; r > 0; r-- )); do
-        LOSTH[j*LOSS_ROUNDS+r]=${LOSTH[j*LOSS_ROUNDS+r-1]}
-      done
-      LOSTH[j*LOSS_ROUNDS]=$(( PINGS - P_OK ))
+      if (( ! busy )); then          # rounds during a speed test do not count
+        for (( r = LOSS_ROUNDS - 1; r > 0; r-- )); do
+          LOSTH[j*LOSS_ROUNDS+r]=${LOSTH[j*LOSS_ROUNDS+r-1]}
+        done
+        LOSTH[j*LOSS_ROUNDS]=$(( PINGS - P_OK ))
+      fi
       lost=0; sent=0
       for (( r = 0; r < LOSS_ROUNDS; r++ )); do
         [[ -n ${LOSTH[j*LOSS_ROUNDS+r]} ]] || continue
         (( lost += LOSTH[j*LOSS_ROUNDS+r], sent += PINGS ))
       done
-      loss=$(( (lost * 100 + sent / 2) / sent ))
+      loss=0; (( sent )) && loss=$(( (lost * 100 + sent / 2) / sent ))
       if (( P_OK )); then
         ZERO[j]=0; PLAT[j]=$(( P_SUM / P_OK ))
         med=${PLAT[j]}
@@ -958,7 +964,10 @@ checker() { # the background loop
           done
           i=${#ok[@]}; med=$(( (ok[(i-1)/2] + ok[i/2]) / 2 ))
         fi
-        if (( med >= LAT_WARN[j] )); then SLOW[j]=$(( ${SLOW[j]:-0} + 1 )); else SLOW[j]=0; fi
+        if (( busy )); then :         # slow rounds neither counted nor reset
+        elif (( med >= LAT_WARN[j] )); then SLOW[j]=$(( ${SLOW[j]:-0} + 1 ))
+        else SLOW[j]=0
+        fi
       else ZERO[j]=$(( ${ZERO[j]:-0} + 1 ))
       fi
       lat=${PLAT[j]:--1}
