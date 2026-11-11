@@ -679,14 +679,17 @@ wifi_poll_win() { # wifi_poll from "netsh wlan show interfaces" (Spanish or Engl
   ssid=$(LC_ALL=$UTF8 bash -c 's=$1; printf "%s|%d" "${s:0:18}" $(( 18 - ${#s} < 0 ? 0 : 18 - ${#s} ))' _ "$ssid")
   WIFI="0|$ssid|$sec|$seclv|$band|$ch|$sig||$rate|$phy"
 }
+round_sleep() { # round_sleep PERIOD START: sleep what is left of a round
+  local left=$(( $1 - (SECONDS - $2) ))   # that began at SECONDS = START
+  (( left > 0 )) && sleep $left
+}
 wifi_checker() { # its own background loop, writing "round|$WIFI" to $RES.wifi
-  local seq=0 k
+  local seq=0 t0
   while kill -0 "$MAIN_PID" 2>/dev/null; do
-    k=$SECONDS
+    t0=$SECONDS
     wifi_poll; (( seq++ ))
     printf '%s\n' "$seq|$WIFI" > "$RES.wifi.tmp" && mv -f "$RES.wifi.tmp" "$RES.wifi"
-    k=$(( WIFI_S - (SECONDS - k) ))
-    (( k > 0 )) && sleep $k
+    round_sleep $WIFI_S $t0
   done
 }
 HAVE_NSLOOKUP=0; command -v nslookup > /dev/null 2>&1 && HAVE_NSLOOKUP=1
@@ -705,9 +708,9 @@ dns_parse() { # dns_parse FILE: true if nslookup got an address; sets $DNS_SRV
   (( ok && ! bad ))
 }
 dns_checker() { # its own background loop, writing "round state server" to
-  local i k st seq=0 zero=0    # $RES.dns: up if every name resolves, degraded
+  local i k t0 st seq=0 zero=0 # $RES.dns: up if every name resolves, degraded
   while kill -0 "$MAIN_PID" 2>/dev/null; do  # if only some do, down after
-    k=$SECONDS                                # DOWN_ROUNDS rounds with none
+    t0=$SECONDS                               # DOWN_ROUNDS rounds with none
     st=-1; DNS_SRV=-                          # (-1 = no nslookup here)
     if (( HAVE_NSLOOKUP )); then
       for (( i = 0; i < ${#DNS_NAMES[@]}; i++ )); do
@@ -723,8 +726,7 @@ dns_checker() { # its own background loop, writing "round state server" to
     fi
     (( seq++ ))
     printf '%s\n' "$seq $st $DNS_SRV" > "$RES.dns.tmp" && mv -f "$RES.dns.tmp" "$RES.dns"
-    k=$(( CHECK_S - (SECONDS - k) ))
-    (( k > 0 )) && sleep $k
+    round_sleep $CHECK_S $t0
   done
 }
 public_ip() { # -> $PUB_IP the address the web sees ("" unknown), $PUB_LOC
@@ -800,11 +802,11 @@ speed_checker() { # its own background loop, writing "round kbit/s" to
   done
 }
 checker() { # the background loop
-  local i j r k st lat loss lost sent L seq=0 out lip wifi med need lw
+  local i j r t0 st lat loss lost sent L seq=0 out lip wifi med need lw
   local -a ok
   LOSTH=(); ZERO=(); PLAT=(); SLOW=()
   while kill -0 "$MAIN_PID" 2>/dev/null && (( seq < ${1:-0} || ${1:-0} == 0 )); do
-    k=$SECONDS
+    t0=$SECONDS
     gateway; if_rate
     HOSTS=("$INET_TARGET" "$GW" "$INET_ALT")
     for (( i = 0; i < ${#HOSTS[@]}; i++ )); do
@@ -859,8 +861,7 @@ checker() { # the background loop
       out+=" $st $lat $loss $P_JIT $L $(( RATE < 0 ? -1 : RATE / 1000 )) ${P_RTT[*]}"
     done
     printf '%s\n' "$out" > "$RES.tmp" && mv -f "$RES.tmp" "$RES"
-    k=$(( CHECK_S - (SECONDS - k) ))
-    (( k > 0 )) && sleep $k
+    round_sleep $CHECK_S $t0
   done
 }
 
