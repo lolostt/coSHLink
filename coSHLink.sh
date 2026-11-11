@@ -631,7 +631,11 @@ now_ms() {
   if [[ -n $EPOCHREALTIME ]]; then MS=${EPOCHREALTIME/[.,]/}; MS=$(( MS / 1000 ))
   else MS=$(( SECONDS * 1000 )); fi
 }
-win_ipconfig() { # Windows: -> $GW, $GW_IF (adapter), $IF_IP its address, $WIFI_IP
+# --- What differs between systems lives in one function per system, named
+# after it (OS = mac, win or linux) and called by name: gateway_$OS,
+# if_addr_$OS, if_bytes_$OS, wifi_poll_$OS and trace_$OS. Each one returns
+# the same variables in the same form, whatever its tools print.
+gateway_win() { # -> $GW, $GW_IF (adapter), $IF_IP its address, $WIFI_IP
   local line ad="" ip="" ingw=0 v re='([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)'
   GW=""; GW_IF=""; IF_IP=""; WIFI_IP=""
   while IFS= read -r line; do      # adapters, in Spanish or English
@@ -656,10 +660,13 @@ win_ipconfig() { # Windows: -> $GW, $GW_IF (adapter), $IF_IP its address, $WIFI_
 }
 gateway() { # -> $GW, the local router ("" if none), $GW_IF its interface,
   # $TUN 1 if a default route goes through a tunnel (a VPN) (not on Windows)
-  local dst gw netif re='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
+  local re='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
   GW=""; GW_IF=""; TUN=0
-  if (( WIN )); then win_ipconfig; return; fi
-  if [[ $OS == linux ]]; then gateway_linux; return; fi
+  gateway_$OS
+  [[ $GW =~ $re ]] || { GW=""; GW_IF=""; }
+}
+gateway_mac() { # the default route from netstat, else the router DHCP gave
+  local dst gw netif re='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
   while read -r dst gw _ netif _; do       # the default route, not through a VPN
     [[ $dst == default ]] || continue
     [[ $netif == utun* || $netif == ipsec* ]] && { TUN=1; continue; }
@@ -672,7 +679,6 @@ gateway() { # -> $GW, the local router ("" if none), $GW_IF its interface,
     [[ -n $GW ]] && break
     GW=$(ipconfig getoption "$netif" router 2>/dev/null); GW_IF=$netif
   done
-  [[ $GW =~ $re ]] || { GW=""; GW_IF=""; }
 }
 PREV_RX=-1; PREV_TX=-1; PREV_MS=0; PREV_IF=""
 gateway_linux() { # gateway from /proc/net/route (read with builtins): the
@@ -687,38 +693,49 @@ gateway_linux() { # gateway from /proc/net/route (read with builtins): the
   done 2>/dev/null < /proc/net/route
 }
 if_addr() { # if_addr INTERFACE -> $IFA, its IPv4 address ("" if none)
-  local line re='inet ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)'
   IFA=""
-  [[ -n $1 ]] || return
-  case $OS in
-    mac)   IFA=$(ipconfig getifaddr "$1" 2>/dev/null) ;;
-    linux) while IFS= read -r line; do
-             [[ $line =~ $re ]] && { IFA=${BASH_REMATCH[1]}; break; }
-           done < <(ip -4 -o addr show dev "$1" 2>/dev/null) ;;
-  esac
+  [[ -n $1 ]] && if_addr_$OS "$1"
   [[ $IFA =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || IFA=""
 }
-if_rate() { # -> $RATE bits/s through the gateway interface since the last call
+if_addr_mac() {
+  IFA=$(ipconfig getifaddr "$1" 2>/dev/null)
+}
+if_addr_linux() {
+  local line re='inet ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)'
+  while IFS= read -r line; do
+    [[ $line =~ $re ]] && { IFA=${BASH_REMATCH[1]}; break; }
+  done < <(ip -4 -o addr show dev "$1" 2>/dev/null)
+}
+if_addr_win() { # from what gateway_win read (gateway runs first)
+  [[ $1 == "$GW_IF" ]] && IFA=$IF_IP
+  [[ $1 == "$WIFI_IF" && -n $WIFI_IP ]] && IFA=$WIFI_IP
+}
+if_bytes_mac() { # -> $RX $TX, the byte counters of interface $GW_IF
   local -a f
-  local line rx=-1 tx=-1 dt b
+  while read -r -a f; do
+    [[ ${f[2]} == "<Link"* ]] || continue
+    RX=${f[6]}; TX=${f[9]}; break
+  done < <(netstat -ib -I "$GW_IF" 2>/dev/null)
+}
+if_bytes_win() { # "MTU state in out name" per interface
+  local -a f
+  local line
+  while read -r -a f; do
+    line="${f[*]:4}"; line=${line//$'\r'/}
+    [[ -n $line && ( $GW_IF == "$line" || $GW_IF == *" $line" ) ]] || continue
+    RX=${f[2]}; TX=${f[3]}; break
+  done < <(netsh interface ipv4 show subinterfaces 2>/dev/null)
+}
+if_bytes_linux() { # the counters in /sys, no process
+  read -r RX 2>/dev/null < "/sys/class/net/$GW_IF/statistics/rx_bytes"
+  read -r TX 2>/dev/null < "/sys/class/net/$GW_IF/statistics/tx_bytes"
+}
+if_rate() { # -> $RATE bits/s through the gateway interface since the last call
+  local rx tx dt b
   RATE=-1
   [[ $GW_IF == "$PREV_IF" ]] || { PREV_RX=-1; PREV_IF=$GW_IF; }  # another interface
   [[ -n $GW_IF ]] || return
-  if (( WIN )); then               # Windows: "MTU state in out name" per interface
-    while read -r -a f; do
-      line="${f[*]:4}"; line=${line//$'\r'/}
-      [[ -n $line && ( $GW_IF == "$line" || $GW_IF == *" $line" ) ]] || continue
-      rx=${f[2]}; tx=${f[3]}; break
-    done < <(netsh interface ipv4 show subinterfaces 2>/dev/null)
-  elif [[ $OS == linux ]]; then    # Linux: the counters in /sys, no process
-    read -r rx 2>/dev/null < "/sys/class/net/$GW_IF/statistics/rx_bytes"
-    read -r tx 2>/dev/null < "/sys/class/net/$GW_IF/statistics/tx_bytes"
-  else
-    while read -r -a f; do
-      [[ ${f[2]} == "<Link"* ]] || continue
-      rx=${f[6]}; tx=${f[9]}; break
-    done < <(netstat -ib -I "$GW_IF" 2>/dev/null)
-  fi
+  RX=-1; TX=-1; if_bytes_$OS; rx=$RX; tx=$TX
   [[ $rx =~ ^[0-9]+$ && $tx =~ ^[0-9]+$ ]] || return
   now_ms; dt=$(( MS - PREV_MS ))
   if (( PREV_RX >= 0 && dt > 0 && rx >= PREV_RX && tx >= PREV_TX )); then
@@ -773,13 +790,18 @@ sec_short() { # sec_short SECURITY -> $SEC a short name, $SECLV its level:
   esac                                       # anything else: unknown, amber
 }
 wifi_poll() { # -> $WIFI: "state|name|pad|security|level|band|channel|signal|
-  local line cur=0 sec="" seclv=0 band="" ch="" sig="" noise="" rate="" phy=""
-  local ssid="" name="" st re pad   # noise|rate|mode"
+  # noise|rate|mode"
   # state: 0 joined, 1 on but not joined, 2 Wi-Fi off, 3 no Wi-Fi interface,
   # 4 no details on this system (Linux)
   if [[ -z $WIFI_IF ]]; then WIFI="3|||||||||"; return; fi
-  if (( WIN )); then wifi_poll_win; return; fi
-  if [[ $OS == linux ]]; then WIFI="4|||||||||"; return; fi  # no Wi-Fi details
+  wifi_poll_$OS
+}
+wifi_poll_linux() { # no Wi-Fi reader for Linux
+  WIFI="4|||||||||"
+}
+wifi_poll_mac() {
+  local line cur=0 sec="" seclv=0 band="" ch="" sig="" noise="" rate="" phy=""
+  local ssid="" name="" st re
   st=1
   # The name: hidden by macOS 15 and later unless "sudo ipconfig setverbose 1"
   while IFS= read -r line; do
@@ -930,15 +952,16 @@ public_ip() { # -> $PUB_IP the address the web sees ("" unknown), $PUB_LOC
   done
   ascii "$cc${city:+ $city}${org:+, $org}"; PUB_LOC=${A:0:33}
 }
+trace_win() { tracert -d -h 5 -w 1000 "$INET_TARGET"; }   # the first 5 hops
+trace_mac() { traceroute -n -m 5 -q 1 -w 1 "$INET_TARGET"; }
+trace_linux() { traceroute -n -m 5 -q 1 -w 1 "$INET_TARGET"; }
 cgnat_check() { # -> $CGN=1 if a hop after the local router is in 100.64.0.0/10
   local line n=0 re='^[0-9]+[[:space:]][^.]*[^0-9.]([0-9]+)\.([0-9]+)\.[0-9]+\.[0-9]+'
   CGN=0
   # through a VPN the hops are the tunnel's: Tailscale, for one, uses the
   # same 100.64.0.0/10 and would look like carrier-grade NAT
   (( TUN )) && return
-  if (( WIN )); then tracert -d -h 5 -w 1000 "$INET_TARGET"
-  else traceroute -n -m 5 -q 1 -w 1 "$INET_TARGET"
-  fi > "$TMPD/trace" 2>&1 < /dev/null & wait $!
+  trace_$OS > "$TMPD/trace" 2>&1 < /dev/null & wait $!
   while read -r line; do           # hop lines: "2  10.20.30.40  2.5 ms" or,
     line=" ${line//$'\r'/}"        # on Windows, "2  2 ms  2 ms  2 ms  10.20.30.40"
     [[ ${line# } =~ ^[0-9]+[[:space:]] ]] || continue
@@ -953,8 +976,7 @@ ip_checker() { # its own background loop, writing "address|cgnat|place" to
   bg_init                                   # "~" while it asks again
   while kill -0 "$MAIN_PID" 2>/dev/null; do
     gateway                           # a new network, or a VPN going up or
-    if (( WIN )); then key="$WIFI_IP $GW"   # down, asks again at once
-    else if_addr "$WIFI_IF"; key="$IFA $GW $GW_IF $TUN"; fi
+    if_addr "$WIFI_IF"; key="$IFA $GW $GW_IF $TUN"   # down, asks again at once
     if [[ $key != "$old" ]] || (( SECONDS >= next )); then
       [[ -n $old && $key != "$old" ]] && { ip=-; loc=""; write_file "$RES.ip" "~|0|"; }
       old=$key
@@ -1029,9 +1051,8 @@ checker() { # the background loop
     done
     wait
     [[ -e $TMPD/busy ]] && busy=1
-    (( seq++ )); lip=""
-    if (( WIN )); then lip=$IF_IP
-    else if_addr "$GW_IF"; lip=$IFA; fi
+    (( seq++ ))
+    if_addr "$GW_IF"; lip=$IFA
     out="$seq ${GW:--} 0 ${lip:--}"; wifi=1
     [[ -n $GW_IF && $GW_IF != "$WIFI_IF" ]] && { out="$seq $GW 1 ${lip:--}"; wifi=0; }  # 1: by cable
     if (( wifi )); then need=$WIFI_SLOW_ROUNDS; lw=$WIFI_LOSS_WARN; else need=1; lw=$LOSS_WARN; fi
