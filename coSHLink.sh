@@ -347,10 +347,10 @@ cell() { # cell ROW COL h|v
 # LUP: ms per cell of an up pulse; the short internet wire goes slower so
 # its pulse takes about as long per trip as the computer one
 LUP=(60 20)
-LINK_START[0]=${#P_IDX[@]}; LSLOW[W_SEQ]=2; LTAIL[0]=3
+LINK_START[0]=${#P_IDX[@]}; LSLOW[0]=2; LTAIL[0]=3
 for (( r = AP_R + 1; r >= 4; r-- )); do cell $r $MID_C v; done
 # link 1: computer -> gateway (right)
-LINK_START[1]=${#P_IDX[@]}; LSLOW[W_STATE]=1; LTAIL[1]=6
+LINK_START[1]=${#P_IDX[@]}; LSLOW[1]=1; LTAIL[1]=6
 for (( c = MAC_C + 13; c < AP_C; c++ )); do cell $LINK_R $c h; done
 DASH=(0 1)                          # 1: a dashed wire (Wi-Fi), 0 solid (cable)
 LINK_START[NL]=${#P_IDX[@]}
