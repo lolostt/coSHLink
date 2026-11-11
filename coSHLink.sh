@@ -387,7 +387,7 @@ term_restore() { # the cursor and the terminal settings as they were
   [[ -t 0 && -n $STTY ]] || return
   # keys pressed while running would reach the shell after exit (an Enter
   # among them runs a command): read and drop them first
-  stty -icanon min 0 time 0 2>/dev/null && cat > /dev/null
+  stty -icanon min 0 time 0 2>/dev/null && cat > /dev/null 2>&1   # EAGAIN on MSYS
   stty "$STTY" 2>/dev/null
 }
 suspend() { # Ctrl+Z: give the terminal back as it was, then stop
