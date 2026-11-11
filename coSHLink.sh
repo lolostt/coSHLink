@@ -50,7 +50,7 @@ done
 
 APP=coSHLink                       # title of the status box (ASCII, up to 11)
 YEAR=2026                          # bottom right, in soft grey:
-BUILD="build 1"                    # "MAKER · YEAR · BUILD" (ASCII)
+BUILD="build 2"                    # "MAKER · YEAR · BUILD" (ASCII)
 MAKER="www.sleepingcoconut.com"
 LOCAL=MACBOOK                      # this computer (ASCII, up to 15 letters)
 WIN=0; [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]] && WIN=1  # Git Bash
