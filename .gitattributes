@@ -1,0 +1,5 @@
+# Scripts run by bash keep LF on every system; the .bat keeps its CRLF as is
+*.sh text eol=lf
+*.command text eol=lf
+*.desktop text eol=lf
+*.bat -text
