@@ -1,0 +1,12 @@
+[Desktop Entry]
+# coSHLink: double-click in the file manager to open a terminal window
+# running coSHLink.sh --loop (Ctrl+C quits). Keep it next to coSHLink.sh.
+# The first time, GNOME Files asks to trust it (right click, "Allow
+# Launching"); KDE Dolphin asks to make it executable.
+Type=Application
+Name=coSHLink
+Comment=The way from this computer to the internet, live
+Terminal=true
+Exec=bash -c 'printf "\\033]0;coSHLink\\007\\033[8;24;80t"; sleep 0.5; exec "$(dirname "$1")/coSHLink.sh" --loop' coSHLink %k
+Icon=network-wired
+Categories=Network;Monitor;
