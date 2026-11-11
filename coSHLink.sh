@@ -360,13 +360,15 @@ trap resume CONT
 trap '' PIPE                       # a dead helper gives a write error, not death
 term_hide
 
-# Millisecond clock (fixed step when EPOCHREALTIME is missing, bash < 5)
+# Millisecond clock: EPOCHREALTIME (bash 5), else the perl clock, else a
+# fixed step
 TICK_MS=60
 NOW=0
 clock_tick() {
+  local last=$NOW
   if (( CLOCK )); then              # if the perl clock dies, carry on without it
     { printf x >&4 && read -r NOW <&5 && [[ $NOW =~ ^[0-9]+$ ]]; } 2>/dev/null ||
-      { CLOCK=0; pause() { sleep 0.04; }; clock_tick; }
+      { CLOCK=0; NOW=$last; pause() { sleep 0.04; }; clock_tick; }
   elif [[ -n $EPOCHREALTIME ]]; then
     local t=${EPOCHREALTIME/[.,]/}
     NOW=$(( t / 1000 ))
@@ -495,12 +497,13 @@ RES=$TMPD/results
 : > "$RES"; : > "$RES.dns"; : > "$RES.ip"; : > "$RES.wifi"; : > "$RES.speed"
 MAIN_PID=$$
 # Frame pause without a new process: read -t on a FIFO nobody writes to.
-# Fractional timeouts need bash 4. bash 3.2 (the one in macOS) has neither
-# those nor a millisecond clock, so there a small perl process paces the
-# frames: asked for the time, it answers at most every FRAME_MS ms.
+# That and the millisecond clock (EPOCHREALTIME) need bash 5. Without them
+# (bash 3.2, the one in macOS, or bash 4) a small perl process paces the
+# frames: asked for the time, it answers at most every FRAME_MS ms. Only
+# without perl too does the clock fall back to a fixed step per frame.
 FRAME_MS=40
 CLOCK=0
-if (( BASH_VERSINFO[0] >= 4 )) && mkfifo "$TMPD/tick" 2>/dev/null &&
+if [[ -n $EPOCHREALTIME ]] && mkfifo "$TMPD/tick" 2>/dev/null &&
    exec 3<> "$TMPD/tick"; then
   pause() { read -r -t 0.04 -u 3 _; }
 elif command -v perl > /dev/null 2>&1 && mkfifo "$TMPD/ask" "$TMPD/ms" 2>/dev/null; then
