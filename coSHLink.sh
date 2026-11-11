@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2086  # unquoted on purpose: numbers, and lists of PIDs
 # coSHLink: a map of this computer's way to the internet, on whatever
 # network it is joined to. The computer sits on the left (a laptop, or a
 # desktop tower and screen on Windows), wired to the gateway (the access
@@ -125,7 +126,7 @@ IP_URL2=https://api.ipify.org      # the address alone, if the first fails
 IP_S=300
 # Download speed (--speed only): one download of SPEED_MB MB, at most
 # SPEED_MAX_S seconds, every SPEED_S seconds
-SPEED_URL=https://speed.cloudflare.com/__down?bytes=
+SPEED_URL="https://speed.cloudflare.com/__down?bytes="
 SPEED_MB=25
 SPEED_MAX_S=15
 SPEED_S=600
@@ -231,7 +232,7 @@ for (( k = 0; k < ROWS * COLS; k++ )); do GCH[k]=" "; GCO[k]=$RESET; done
 CHG=()
 setc() { # setc INDEX CHAR COLOR
   [[ ${GCH[$1]} == "$2" && ${GCO[$1]} == "$3" ]] && return
-  GCH[$1]=$2; GCO[$1]=$3; CHG+=($1)
+  GCH[$1]=$2; GCO[$1]=$3; CHG+=("$1")
 }
 put() { # put ROW COL CHAR COLOR
   setc $(( $1 * COLS + $2 )) "$3" "$4"
@@ -251,11 +252,14 @@ clear_cells() { # clear_cells ROW COL WIDTH
 # Drawings: one string per row, "MASK|CHARS". CHARS holds one character per
 # cell ("_" = blank); MASK holds one color letter per cell:
 # m computer, k keyboard deck, a access point, n antenna, o globe (blue).
-rgb 165 170 182; C_m="${ESC}[0;${FG}m"
-rgb 120 124 135; C_k="${ESC}[0;${FG}m"
-rgb 150 155 168; C_a="${ESC}[0;${FG}m"
-rgb 110 114 125; C_n="${ESC}[0;${FG}m"
-rgb 80 160 255;  C_o="${ESC}[0;${FG}m"
+# shellcheck disable=SC2034  # C_m ... C_n are read by draw, through eval
+{
+  rgb 165 170 182; C_m="${ESC}[0;${FG}m"
+  rgb 120 124 135; C_k="${ESC}[0;${FG}m"
+  rgb 150 155 168; C_a="${ESC}[0;${FG}m"
+  rgb 110 114 125; C_n="${ESC}[0;${FG}m"
+  rgb 80 160 255;  C_o="${ESC}[0;${FG}m"
+}
 MAC=(
   "..mmmmmmmmmmm|_ _ ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐"
   "..m.........m|_ _ │ _ _ _ _ _ _ _ _ _ │"
@@ -358,8 +362,8 @@ done
 # cells of the globe and of its label, recolored when the internet is down
 GLOBE_CELLS=(); INET_CELLS=()
 for (( k = 0; k < 4 * COLS; k++ )); do
-  [[ ${GCO[k]} == "$C_o" ]] && GLOBE_CELLS+=($k)
-  [[ ${GCO[k]} == "$NAME_COLOR" ]] && INET_CELLS+=($k)
+  [[ ${GCO[k]} == "$C_o" ]] && GLOBE_CELLS+=("$k")
+  [[ ${GCO[k]} == "$NAME_COLOR" ]] && INET_CELLS+=("$k")
 done
 
 # Set before the trap: cleanup must never act on values from the environment
@@ -607,19 +611,19 @@ ping_parse() { # ping_parse FILE -> $P_RTT (PINGS ms, -1 lost), $P_OK, $P_SUM, $
   # its replies go in the order they came. Decimals are dropped (0.4 ms is 0).
   local line n=0 i prev=-1 d base=0 re='[=<]([0-9]+)([.,][0-9]+)? ?m' sq='icmp_seq=([0-9]+)'
   local jsum=0 jn=0
-  local -a seq=() rtt=()
+  local -a sqn=() rtt=()
   P_RTT=(); P_OK=0; P_SUM=0; P_JIT=-1
   [[ $OS == linux ]] && base=1
   while IFS= read -r line && (( n < PINGS )); do
     [[ $line == *[Tt][Tt][Ll]=* && $line =~ $re ]] || continue  # a reply
-    rtt[n]=$(( 10#${BASH_REMATCH[1]} )); seq[n]=-1
-    [[ $line =~ $sq ]] && seq[n]=$(( 10#${BASH_REMATCH[1]} ))
-    (( seq[n] == 0 )) && base=0       # BusyBox counts from 0 on Linux too
+    rtt[n]=$(( 10#${BASH_REMATCH[1]} )); sqn[n]=-1
+    [[ $line =~ $sq ]] && sqn[n]=$(( 10#${BASH_REMATCH[1]} ))
+    (( sqn[n] == 0 )) && base=0       # BusyBox counts from 0 on Linux too
     (( n++ ))
   done < "$1"
   for (( i = 0; i < n; i++ )); do
-    d=$(( seq[i] - base ))
-    (( seq[i] < 0 || d < 0 || d >= PINGS )) && d=$i   # no usable seq: in order
+    d=$(( sqn[i] - base ))
+    (( sqn[i] < 0 || d < 0 || d >= PINGS )) && d=$i   # no usable seq: in order
     [[ -n ${P_RTT[d]} ]] && d=$i
     P_RTT[d]=${rtt[i]}; (( P_SUM += rtt[i], P_OK++ ))
   done
@@ -768,6 +772,7 @@ printable() { # printable STRING -> $PR: no control characters, no "|"
 fit_name() { # fit_name NAME -> $FIT: "NAME|PAD", the name cleaned and cut to
   # 18 characters, PAD the spaces that fill it to 18 (characters, not bytes,
   # are counted in a UTF-8 locale)
+  # shellcheck disable=SC2016  # the script for the inner bash, as it is
   FIT=$(LC_ALL=$UTF8 "$BASH" -c 's=${1//[[:cntrl:]]/}; s=${s//|//}; s=${s:0:18}
     printf "%s|%d" "$s" $(( 18 - ${#s} ))' _ "$1")
 }
@@ -1085,7 +1090,7 @@ checker() { # the background loop
       if (( P_OK )); then
         ZERO[j]=0; PLAT[j]=$(( P_SUM / P_OK ))
         med=${PLAT[j]}
-        (( wifi )) && { median ${P_RTT[*]}; med=$MED; }
+        (( wifi )) && { median "${P_RTT[@]}"; med=$MED; }
         if (( busy )); then :         # slow rounds neither counted nor reset
         elif (( med >= LAT_WARN[j] )); then SLOW[j]=$(( ${SLOW[j]:-0} + 1 ))
         else SLOW[j]=0
@@ -1692,7 +1697,7 @@ main() {
   make_tmp
   start_clock
   find_wifi_if
-  if (( CHECK )); then run_check; exit 0; fi
+  if (( CHECK )); then run_check; fi   # it exits
   if ! fits; then
     echo "${0##*/}: the window must be at least ${NEED_COLS}x${LINES_N} (it is ${TCOLS}x${TROWS})" >&2
     exit 2
