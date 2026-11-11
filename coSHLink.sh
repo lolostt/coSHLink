@@ -1563,7 +1563,12 @@ while :; do
     # changed cells only: line 0 is the blank line on top, map row r is line r + 1
     out="${ESC}[G${ESC}[$(( LINES_N - 1 ))A"; CUR=0; last=""
     for k in "${CHG[@]}"; do
-      to_line $(( k / COLS + 1 ))
+      # a cell under a box shown over the map stays under it: the box is
+      # sent only when it changes, and a cell drawn over it would show
+      r=$(( k / COLS )); c=$(( k % COLS ))
+      (( r < 3 && c < SBOX_W )) && continue
+      (( ! nobox && r >= WBOX_R && r < WBOX_R + 6 && c >= WBOX_C )) && continue
+      to_line $(( r + 1 ))
       out+="${ESC}[$(( k % COLS + 3 ))G"
       [[ ${GCO[k]} != "$last" ]] && { last=${GCO[k]}; out+=$last; }
       out+=${GCH[k]}
