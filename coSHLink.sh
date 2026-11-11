@@ -555,8 +555,14 @@ case $OS in
       [[ -d $f ]] && { WIFI_IF=${f%/wireless}; WIFI_IF=${WIFI_IF##*/}; break; }
     done ;;
 esac
-UTF8=en_US.UTF-8                   # locale for counting the characters of names
-[[ ${LC_ALL:-${LC_CTYPE:-$LANG}} == *[Uu][Tt][Ff]*8* ]] && UTF8=${LC_ALL:-${LC_CTYPE:-$LANG}}
+# A UTF-8 locale for counting the characters of names and for iconv: the
+# user's if it is one, else one this system has (C.UTF-8 on most Linux,
+# en_US.UTF-8 on macOS)
+UTF8=${LC_ALL:-${LC_CTYPE:-$LANG}}
+if [[ $UTF8 != *[Uu][Tt][Ff]*8* ]]; then
+  UTF8=$(locale -a 2>/dev/null | grep -i -m 1 -E '^(C|en_US)\.utf-?8$')
+  UTF8=${UTF8:-en_US.UTF-8}
+fi
 
 ping_host() { # ping_host HOST: PINGS pings, 1 s for each reply, the whole
   case $OS in   # round within PINGS + 1 s (the reply wait is in ms on macOS
@@ -803,6 +809,7 @@ write_file() { # write_file FILE LINE: all at once (a reader never sees half)
 # sleep or a download must not outlive the script.
 bg_init() {
   trap 'kill $(jobs -p) 2>/dev/null; exit 0' TERM
+  export LC_ALL=C   # the tools whose output is parsed answer in English
 }
 nap() { # nap SECONDS
   sleep "$1" & wait $!
@@ -1030,6 +1037,7 @@ needs() { # the tools this system needs, and those that are missing
   echo "missing:${miss:- none}"
 }
 if (( CHECK )); then                # --check: one read of each source, in text
+  export LC_ALL=C                   # as in the background loops
   echo "bash $BASH_VERSION on $OS, Wi-Fi interface: ${WIFI_IF:-none}"
   needs
   wifi_poll; echo "Wi-Fi (state|name|pad|security|level|GHz|channel|signal|noise|Mb/s|mode):"
