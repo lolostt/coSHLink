@@ -65,7 +65,8 @@ LINK_NAMES=(INTERNET GATEWAY)      # as in the panel (ASCII, up to 9)
 
 # --- What to measure ---
 INET_TARGET=1.1.1.1                # ping target of the internet link
-INET_ALT=8.8.8.8                   # internet is down only if this fails too
+INET_ALT=8.8.8.8                   # second target: the internet link shows the
+                                   # one that answers better in each round
 LAT_WARN=(100 30)                  # ms per link (internet, gateway): latency from
 LAT_CRIT=(200 80)                  # WARN is amber (link degraded), from CRIT red
 LOSS_WARN=5                        # %: loss above this -> degraded
@@ -931,7 +932,10 @@ checker() { # the background loop
     if (( wifi )); then need=$WIFI_SLOW_ROUNDS; lw=$WIFI_LOSS_WARN; else need=1; lw=$LOSS_WARN; fi
     for (( j = 0; j < NL; j++ )); do
       ping_parse "$TMPD/p$j"
-      (( j == 0 && P_OK == 0 )) && ping_parse "$TMPD/p$NL"   # second opinion
+      if (( j == 0 )); then          # the internet: the better of the two targets
+        r=$P_OK; ping_parse "$TMPD/p$NL"   # (the first one on a tie), so its
+        (( P_OK > r )) || ping_parse "$TMPD/p0"  # loss and latency agree
+      fi
       for (( r = LOSS_ROUNDS - 1; r > 0; r-- )); do
         LOSTH[j*LOSS_ROUNDS+r]=${LOSTH[j*LOSS_ROUNDS+r-1]}
       done
