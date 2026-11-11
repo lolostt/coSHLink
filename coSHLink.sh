@@ -22,31 +22,46 @@
 # Without it the network is shown as "(name hidden)" and everything else
 # works the same.
 #
-# Usage: ./coSHLink.sh [--loop] [--speed] [--256 | --truecolor]
-#   --loop       run forever (Ctrl+C to quit); default is RUN_S seconds
-#   --speed      measure the download speed every SPEED_S seconds (it
-#                downloads SPEED_MB MB each time: mind a metered connection)
-#   --256        force 256 colors (macOS Terminal on 15 Sequoia and earlier)
-#   --truecolor  force 24-bit color (the default, except in that Terminal)
-#   --check      read every source once, print what it returns and exit
-#                (no animation)
+# Usage (also with --help):
+USAGE="Usage: ${0##*/} [--loop] [--speed] [--check] [--log FILE] [--256 | --truecolor]
+  --loop       run forever (Ctrl+C to quit); default is RUN_S seconds
+  --speed      measure the download speed every SPEED_S seconds (it
+               downloads SPEED_MB MB each time: mind a metered connection)
+  --check      read every source once, print what it returns and exit
+               (no animation)
+  --log FILE   append the errors of the background measures to FILE
+               (they are discarded otherwise)
+  --256        force 256 colors
+  --truecolor  force 24-bit color
+  -h, --help   show this help"
 
 LOOP=0
 CHECK=0
 SPEED_ON=0
 COLOR_MODE=auto
-for arg in "$@"; do
-  case $arg in
+LOG=/dev/null
+while (( $# )); do
+  case $1 in
     --loop)      LOOP=1 ;;
     --check)     CHECK=1 ;;
     --speed)     SPEED_ON=1 ;;
+    --log)       [[ -n $2 ]] || { echo "${0##*/}: --log needs a file" >&2; exit 2; }
+                 LOG=$2; shift ;;
     --256)       COLOR_MODE=256 ;;
     --truecolor) COLOR_MODE=24 ;;
-    *) echo "${0##*/}: unknown option '$arg'" >&2
-       echo "Usage: ${0##*/} [--loop] [--speed] [--check] [--256 | --truecolor]" >&2
+    -h|--help)   echo "$USAGE"; exit 0 ;;
+    *) echo "${0##*/}: unknown option '$1'" >&2
+       echo "$USAGE" >&2
        exit 2 ;;
   esac
+  shift
 done
+if (( ! CHECK )) && [[ ! -t 1 ]]; then   # the animation is for a terminal
+  echo "${0##*/}: the output is not a terminal (try --check)" >&2; exit 2
+fi
+if [[ $LOG != /dev/null ]]; then
+  { : >> "$LOG"; } 2>/dev/null || { echo "${0##*/}: cannot write to $LOG" >&2; exit 2; }
+fi
 
 APP=coSHLink                       # title of the status box (ASCII, up to 11)
 YEAR=2026                          # bottom right, in soft grey:
@@ -359,7 +374,7 @@ trap 'exit 129' HUP
 trap suspend TSTP
 trap resume CONT
 trap '' PIPE                       # a dead helper gives a write error, not death
-term_hide
+(( CHECK )) || term_hide
 
 # Millisecond clock: EPOCHREALTIME (bash 5), else the perl clock, else a
 # fixed step
@@ -996,9 +1011,21 @@ checker() { # the background loop
   done
 }
 
+needs() { # the tools this system needs, and those that are missing
+  local t miss="" all="curl nslookup iconv"
+  case $OS in
+    mac)   all+=" netstat ipconfig networksetup system_profiler traceroute" ;;
+    linux) all+=" ip traceroute" ;;
+    win)   all+=" netsh ipconfig tracert" ;;
+  esac
+  [[ -z $EPOCHREALTIME ]] && all+=" perl"       # the frame clock
+  for t in $all; do command -v "$t" > /dev/null 2>&1 || miss+=" $t"; done
+  echo "tools needed: $all"
+  echo "missing:${miss:- none}"
+}
 if (( CHECK )); then                # --check: one read of each source, in text
-  printf '%s' "${ESC}[?25h"; stty echo 2>/dev/null
-  echo "bash $BASH_VERSION, curl: $(command -v curl || echo missing), Wi-Fi interface: ${WIFI_IF:-none}"
+  echo "bash $BASH_VERSION on $OS, Wi-Fi interface: ${WIFI_IF:-none}"
+  needs
   wifi_poll; echo "Wi-Fi (state|name|pad|security|level|GHz|channel|signal|noise|Mb/s|mode):"
   echo "  $WIFI"
   gateway; echo "gateway: ${GW:-none}"
@@ -1013,22 +1040,22 @@ if (( CHECK )); then                # --check: one read of each source, in text
   done
   if (( SPEED_ON )); then speed_test; echo "download speed: $DL_KBPS kbit/s"; fi
   echo "Background process, 2 rounds of $CHECK_S s:"
-  ( checker 2 ) < /dev/null > /dev/null 2>&1 &
+  ( checker 2 ) < /dev/null > /dev/null 2>> "$LOG" &
   wait $!
   echo "  result: $(cat "$RES")"
   CHECK_PID=
   exit 0
 fi
-checker < /dev/null > /dev/null 2>&1 3<&- 4>&- 5<&- &
+checker < /dev/null > /dev/null 2>> "$LOG" 3<&- 4>&- 5<&- &
 CHECK_PID=$!
-dns_checker < /dev/null > /dev/null 2>&1 3<&- 4>&- 5<&- &
+dns_checker < /dev/null > /dev/null 2>> "$LOG" 3<&- 4>&- 5<&- &
 CHECK_PID="$CHECK_PID $!"
-ip_checker < /dev/null > /dev/null 2>&1 3<&- 4>&- 5<&- &
+ip_checker < /dev/null > /dev/null 2>> "$LOG" 3<&- 4>&- 5<&- &
 CHECK_PID="$CHECK_PID $!"
-wifi_checker < /dev/null > /dev/null 2>&1 3<&- 4>&- 5<&- &
+wifi_checker < /dev/null > /dev/null 2>> "$LOG" 3<&- 4>&- 5<&- &
 CHECK_PID="$CHECK_PID $!"
 if (( SPEED_ON )); then
-  speed_checker < /dev/null > /dev/null 2>&1 3<&- 4>&- 5<&- &
+  speed_checker < /dev/null > /dev/null 2>> "$LOG" 3<&- 4>&- 5<&- &
   CHECK_PID="$CHECK_PID $!"
 fi
 
