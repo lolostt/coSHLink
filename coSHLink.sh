@@ -1,26 +1,35 @@
 #!/usr/bin/env bash
-# coSHLink: a live map of the links of a MacBook, on whatever
-# Wi-Fi it is joined to. The MacBook sits on the left, wired to the gateway
-# (the access point) in the middle, and that to the internet (a globe) on
-# top; the MacBook wire is dashed over Wi-Fi and solid over a cable. Each
-# link is drawn with a "comet" pulse running back and forth along the wire,
-# and a panel below shows its throughput (Braille "traffic" meter, from the
-# Wi-Fi interface counters), its latency ("ping" sparkline), jitter and
-# loss. Around the map: the Wi-Fi network (name, security, band, channel,
-# signal, noise, link rate, local IP), the DNS state and server, the public
-# IP with its country, city and operator, a possible CG-NAT and, with
-# --speed, a rough download speed. The
-# measures are real: background processes ping, read the Wi-Fi state and
-# ask the web, and write the results to files that the animation reads, so
-# drawing never waits for the network. macOS, and Windows under Git Bash
-# (there the Wi-Fi comes from netsh: signal in %, shown as rough dBm, no
-# noise).
+# coSHLink: a map of this computer's way to the internet, on whatever
+# network it is joined to. The computer sits on the left (a laptop, or a
+# desktop tower and screen on Windows), wired to the gateway (the access
+# point) in the middle, and that to the internet (a globe) on top; the
+# computer's wire is dashed over Wi-Fi and solid over a cable. Each link is
+# drawn with a "comet" pulse running back and forth along the wire, and a
+# panel below shows its throughput (Braille "traffic" meter, from the
+# counters of the gateway's interface), its latency ("ping" sparkline),
+# jitter and loss. Around the map: the Wi-Fi network (name, security, band,
+# channel, signal, noise, link rate), the local and gateway addresses, the
+# DNS state and server, the public IP with its country, city and operator,
+# a possible CG-NAT and, with --speed, a rough download speed. The measures
+# are real: background processes ping, read the Wi-Fi state and ask the
+# web, and write the results to files that the animation reads, so drawing
+# never waits for the network.
+#
+# Systems: macOS with nothing to install (its bash 3.2 included), Windows
+# under Git Bash (the Wi-Fi from netsh: signal in %, shown as rough dBm, no
+# noise) and Linux (gateway, addresses and traffic, but no Wi-Fi details).
 #
 # The Wi-Fi name: macOS 15 and later hide it ("<redacted>") from scripts.
-# Run this once (it lasts across reboots) so the script can show it:
+# This shows it again, to every program, and lasts across reboots:
 #   sudo ipconfig setverbose 1
+# and this undoes it:
+#   sudo ipconfig setverbose 0
 # Without it the network is shown as "(name hidden)" and everything else
 # works the same.
+#
+# Privacy: the public IP comes from ipinfo.io (IP_URL), asked every IP_S
+# seconds and on each change of network, so that service learns where the
+# computer is; ipify.org is asked only when ipinfo fails.
 #
 # Usage (also with --help):
 USAGE="Usage: ${0##*/} [--loop] [--speed] [--check] [--log FILE] [--256 | --truecolor]
@@ -67,14 +76,13 @@ APP=coSHLink                       # title of the status box (ASCII, up to 11)
 YEAR=2026                          # bottom right, in soft grey:
 BUILD="build 2"                    # "MAKER · YEAR · BUILD" (ASCII)
 MAKER="www.sleepingcoconut.com"
-LOCAL=MACBOOK                      # this computer (ASCII, up to 15 letters)
+LOCAL="THIS COMPUTER"              # under its drawing (ASCII, up to 15 letters)
 case $OSTYPE in                    # mac, win (Git Bash) or linux (any other)
   darwin*)       OS=mac ;;
   msys*|cygwin*) OS=win ;;
   *)             OS=linux ;;
 esac
 WIN=0; [[ $OS == win ]] && WIN=1
-(( WIN )) && LOCAL=PC
 NL=2                               # links: 0 internet, 1 Wi-Fi gateway
 LINK_NAMES=(INTERNET GATEWAY)      # as in the panel (ASCII, up to 9)
 
@@ -100,7 +108,7 @@ LINK_MBPS=(100 300)                # full scale of the traffic meters
 WIFI_S=15                          # seconds between reads of the Wi-Fi state
 DNS_NAMES=(www.google.com www.wikipedia.org) # names resolved each round
 # Public IP, with its country, city and operator, asked again every IP_S
-# seconds and at once when the Mac joins another network. A route to the
+# seconds and at once when the computer joins another network. A route to the
 # internet target through 100.64.0.0/10 (shared space of carrier-grade
 # NAT) adds a "Possible CG-NAT" warning under it.
 IP_URL=https://ipinfo.io/json      # address, city, country and operator
@@ -188,7 +196,7 @@ rgb 235 238 245; NAME_COLOR="${ESC}[0;1;${FG}m"
 rgb 140 140 150; LABEL_COLOR="${ESC}[0;${FG}m"
 rgb 85 88 98; BUILD_COLOR="${ESC}[0;${FG}m"
 rgb 60 62 70; DIM_COLOR="${ESC}[0;${FG}m"
-# the MacBook screen: faint lines of "text", the line being typed a little
+# the computer screen: faint lines of "text", the line being typed a little
 # brighter, and the cursor
 rgb 55 75 105; SCR_COLOR="${ESC}[0;${FG}m"
 rgb 85 115 160; SCR_HOT="${ESC}[0;${FG}m"
@@ -201,8 +209,8 @@ BARS=(▂ ▄ ▆ █)
 # (3: the gateway does not answer pings but the internet works)
 STATE_NAME=("● UP      " "◐ DEGRADED" "○ DOWN    " "◐ NO PING ")
 
-# --- Map: the internet globe on top, the MacBook in the middle and the
-# Wi-Fi gateway on its left; the Wi-Fi box on the right. The whole screen
+# --- Map: the internet globe on top, the gateway under it in the middle,
+# the computer on the left and the Wi-Fi box on the right. The whole screen
 # fits in an 80x24 terminal. ---
 ROWS=16
 COLS=77
@@ -232,7 +240,7 @@ clear_cells() { # clear_cells ROW COL WIDTH
 
 # Drawings: one string per row, "MASK|CHARS". CHARS holds one character per
 # cell ("_" = blank); MASK holds one color letter per cell:
-# m MacBook, k keyboard deck, a access point, n antenna, o globe (blue).
+# m computer, k keyboard deck, a access point, n antenna, o globe (blue).
 rgb 165 170 182; C_m="${ESC}[0;${FG}m"
 rgb 120 124 135; C_k="${ESC}[0;${FG}m"
 rgb 150 155 168; C_a="${ESC}[0;${FG}m"
@@ -282,11 +290,11 @@ draw() { # draw ROW COL ROWS...: paints a drawing with its top-left at ROW,COL
 }
 
 TOP=8                               # first row of the map drawings
-LINK_R=$(( TOP + 3 ))               # row of the MacBook wire
+LINK_R=$(( TOP + 3 ))               # row of the computer wire
 MID_C=38                            # gateway center column, under the globe
-MAC_C=1                             # MacBook drawing column (15 wide)
+MAC_C=1                             # computer drawing column (15 wide)
 (( WIN )) && MAC_C=4                # room for the tower on its left
-MAC_R=$(( TOP + 1 ))                # MacBook drawing row (5 tall)
+MAC_R=$(( TOP + 1 ))                # computer drawing row (5 tall)
 SCR_C=$(( MAC_C + 3 ))              # first column inside the screen (9 wide)
 SCR_R=$(( MAC_R + 1 ))              # first row inside the screen (2 tall)
 AP_C=$(( MID_C - 4 ))               # gateway drawing column (9 wide)
@@ -303,7 +311,7 @@ text 2 $(( INFO_C + 2 )) "Public IP:" "$LABEL_COLOR"
 center $(( TOP + 7 )) $MAC_C 15 "$LOCAL" "$NAME_COLOR"
 center $(( TOP + 7 )) $AP_C 9 "GATEWAY" "$NAME_COLOR"
 
-# Wires as ordered lists of cells, from the MacBook outwards.
+# Wires as ordered lists of cells, from the computer outwards.
 # For each cell: grid index, and its heavy / light / dashed characters.
 # Rows are about twice as tall as columns are wide, so vertical wires
 # move their pulses at half speed (LSLOW) with a shorter tail (LTAIL).
@@ -323,11 +331,11 @@ cell() { # cell ROW COL h|v
 }
 # link 0: gateway -> internet (up, between the antennas)
 # LUP: ms per cell of an up pulse; the short internet wire goes slower so
-# its pulse takes about as long per trip as the MacBook one
+# its pulse takes about as long per trip as the computer one
 LUP=(60 20)
 LINK_START[0]=${#P_IDX[@]}; LSLOW[0]=2; LTAIL[0]=3
 for (( r = AP_R + 1; r >= 4; r-- )); do cell $r $MID_C v; done
-# link 1: MacBook -> gateway (right)
+# link 1: computer -> gateway (right)
 LINK_START[1]=${#P_IDX[@]}; LSLOW[1]=1; LTAIL[1]=6
 for (( c = MAC_C + 13; c < AP_C; c++ )); do cell $LINK_R $c h; done
 DASH=(0 1)                          # 1: a dashed wire (Wi-Fi), 0 solid (cable)
@@ -468,7 +476,7 @@ draw_wire() {
   done
 }
 
-# The MacBook screen: faint lines of "text" scroll up one by one, the last
+# The computer screen: faint lines of "text" scroll up one by one, the last
 # line being typed with a blinking cursor at its end
 SCR_MS=1400                         # ms per line
 draw_screen() {
@@ -1099,7 +1107,7 @@ for (( k = 0; k < NL * HW; k++ )); do SH[k]=-2; done
 for (( j = 0; j < NL; j++ )); do STATE[j]=0; TLV[j]=-1; KBPS[j]=-1; done
 NFIELDS=$(( 4 + NL * (6 + PINGS) ))
 DNS_ST=-1; DNS_SERVER=-; WIRED=0; LIP=""; PUB=""; PLACE=""; CGNAT=0; GWIP=""
-W=(); WSEQ=0; SPD_SEQ=-1; SPD=-1
+W=(); SPD_SEQ=-1; SPD=-1
 SEQ=0; RES_SLOT=-1
 push_samples() { # push_samples ROW FIRST_FIELD: append PINGS samples from R
   local b=$(( $1 * HW )) x
@@ -1235,7 +1243,6 @@ wline() { # wline ASCII_LENGTH STRING -> a Wi-Fi box row, padded to the box
 }
 LINES_N=$(( ROWS + 5 + NL ))       # blank line on top, blank + build lines at the bottom
 printf -v BUILD_LINE "%*s · %s · %s" $(( COLS - 4 - ${#YEAR} - ${#BUILD} )) "$MAKER" "$YEAR" "$BUILD"  # right edge of the map
-# column titles over the link rows
 # The traffic box, left of the link rows: the meter and the speed of the
 # interface (both links read the same counters). Its top is on the title
 # line and its bottom on the blank line under the rows.
@@ -1341,7 +1348,7 @@ while :; do
   (( DSEQ == 0 )) && key+=" $(( T / SPIN_MS ))"
   if [[ $key != "$INFO_KEY" ]]; then
     INFO_KEY=$key
-    # the gateway and MacBook addresses, under their drawings
+    # the gateway and computer addresses, under their drawings
     clear_cells $(( TOP + 6 )) $(( MID_C - 8 )) 17
     [[ -n $GWIP && $GWIP != - ]] && center $(( TOP + 6 )) $(( MID_C - 7 )) 15 "$GWIP" "$LABEL_COLOR"
     clear_cells $(( TOP + 6 )) $MAC_C 15
