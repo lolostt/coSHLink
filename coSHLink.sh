@@ -355,7 +355,7 @@ done
 # Set before the trap: cleanup must never act on values from the environment
 TMPD=""; CHECK_PID=""; CLOCK_PID=""; STTY=""
 cleanup() { # on every exit: stop the helpers, restore the terminal
-  trap - EXIT INT TERM HUP TSTP CONT
+  trap - EXIT INT TERM HUP TSTP CONT WINCH
   kill $CHECK_PID $CLOCK_PID 2>/dev/null
   [[ -n $TMPD ]] && rm -rf "$TMPD"     # only the directory made below
   term_restore
@@ -1249,6 +1249,26 @@ printf -v BUILD_LINE "%*s · %s · %s" $(( COLS - 4 - ${#YEAR} - ${#BUILD} )) "$
 TBOX_TOP="┌─ ${NAME_COLOR}TRAFFIC${BOX_COLOR} ──────┐"
 TBOX_BOT="└────────────────┘"
 PANEL_HEAD="${BOX_COLOR}${TBOX_TOP} ${LABEL_COLOR}  LINK      STATE      PING          LATENCY JITTER LOSS"
+term_size() { # -> $TROWS $TCOLS of the terminal (0 0 if unknown)
+  local sz
+  sz=$(stty size 2>/dev/null) || sz=""
+  TROWS=${sz% *}; TCOLS=${sz#* }
+  [[ $TROWS =~ ^[0-9]+$ && $TCOLS =~ ^[0-9]+$ ]] || { TROWS=0; TCOLS=0; }
+}
+NEED_COLS=$(( COLS + 3 ))           # 2 margin columns, and the last one free
+fits() { # true if the screen fits the terminal (or its size is unknown)
+  term_size
+  (( TROWS == 0 || (TROWS >= LINES_N && TCOLS >= NEED_COLS) ))
+}
+too_small() { # say so on a cleared screen
+  printf '%s' "${ESC}[H${ESC}[2J${RESET}coSHLink needs ${NEED_COLS}x${LINES_N}; this window is ${TCOLS}x${TROWS}."
+}
+if ! fits; then
+  echo "${0##*/}: the window must be at least ${NEED_COLS}x${LINES_N} (it is ${TCOLS}x${TROWS})" >&2
+  exit 2
+fi
+RESIZED=0
+trap 'RESIZED=1' WINCH
 reserve_lines() { # make room: the last line gets no newline, so the lines
   local i         # fill the terminal without scrolling
   for (( i = 1; i < LINES_N; i++ )); do echo; done
@@ -1281,6 +1301,13 @@ INFO_KEY=""; SCR_KEY=""; LIGHT_KEY=""; GLOBE_KEY=""; WBOX_KEY=""
 FIRST=1
 while :; do
   if (( RESUMED )); then RESUMED=0; reserve_lines; FIRST=1; fi   # after Ctrl+Z
+  if (( RESIZED )); then            # the window changed: its text has moved,
+    RESIZED=0                       # so clear it and draw it all from the top
+    if fits; then printf '%s' "${ESC}[H${ESC}[2J"; reserve_lines; FIRST=1
+    else too_small; RESIZED=2
+    fi
+  fi
+  if (( RESIZED == 2 )); then sleep 0.2; continue; fi   # until it fits again
   clock_tick
   (( START < 0 )) && START=$NOW
   T=$(( NOW - START ))
