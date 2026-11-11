@@ -573,19 +573,35 @@ ping_host() { # ping_host HOST: PINGS pings, 1 s for each reply, the whole
   esac
 }
 ping_parse() { # ping_parse FILE -> $P_RTT (PINGS ms, -1 lost), $P_OK, $P_SUM, $P_JIT
-  local line n=0 prev=-1 d re='[=<]([0-9]+)([.,][0-9]+)? ?m'
-  P_RTT=(); P_OK=0; P_SUM=0; P_JIT=-1
+  # Each reply goes to the place of its icmp_seq (0 first on macOS, 1 on
+  # Linux), so a lost ping shows where it was lost; Windows has no seq and
+  # its replies go in the order they came. Decimals are dropped (0.4 ms is 0).
+  local line n=0 i prev=-1 d base=0 re='[=<]([0-9]+)([.,][0-9]+)? ?m' sq='icmp_seq=([0-9]+)'
   local jsum=0 jn=0
+  local -a seq=() rtt=()
+  P_RTT=(); P_OK=0; P_SUM=0; P_JIT=-1
+  [[ $OS == linux ]] && base=1
   while IFS= read -r line && (( n < PINGS )); do
     [[ $line == *[Tt][Tt][Ll]=* && $line =~ $re ]] || continue  # a reply
-    P_RTT[n]=$(( 10#${BASH_REMATCH[1]} )); (( P_SUM += P_RTT[n], P_OK++ ))
-    if (( prev >= 0 )); then   # jitter: mean change between consecutive replies
-      d=$(( P_RTT[n] - prev )); (( d < 0 )) && d=$(( -d )); (( jsum += d, jn++ ))
-    fi
-    prev=${P_RTT[n]}; (( n++ ))
+    rtt[n]=$(( 10#${BASH_REMATCH[1]} )); seq[n]=-1
+    [[ $line =~ $sq ]] && seq[n]=$(( 10#${BASH_REMATCH[1]} ))
+    (( seq[n] == 0 )) && base=0       # BusyBox counts from 0 on Linux too
+    (( n++ ))
   done < "$1"
+  for (( i = 0; i < n; i++ )); do
+    d=$(( seq[i] - base ))
+    (( seq[i] < 0 || d < 0 || d >= PINGS )) && d=$i   # no usable seq: in order
+    [[ -n ${P_RTT[d]} ]] && d=$i
+    P_RTT[d]=${rtt[i]}; (( P_SUM += rtt[i], P_OK++ ))
+  done
+  for (( i = 0; i < PINGS; i++ )); do
+    [[ -n ${P_RTT[i]} ]] || { P_RTT[i]=-1; continue; }
+    if (( prev >= 0 )); then   # jitter: mean change between consecutive replies
+      d=$(( P_RTT[i] - prev )); (( d < 0 )) && d=$(( -d )); (( jsum += d, jn++ ))
+    fi
+    prev=${P_RTT[i]}
+  done
   (( jn )) && P_JIT=$(( (jsum + jn / 2) / jn ))
-  for (( ; n < PINGS; n++ )); do P_RTT[n]=-1; done
 }
 now_ms() {
   if [[ -n $EPOCHREALTIME ]]; then MS=${EPOCHREALTIME/[.,]/}; MS=$(( MS / 1000 ))
@@ -870,21 +886,23 @@ public_ip() { # -> $PUB_IP the address the web sees ("" unknown), $PUB_LOC
   local body re='^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'
   local cc="" city="" org="" sfx   # "ES Madrid, EXAMPLE TELECOM" ("" unknown)
   PUB_IP=""; PUB_LOC=""
-  curl -s -m 5 "$IP_URL" > "$TMPD/ipinfo" 2>/dev/null < /dev/null & wait $!
+  curl -fsS -m 5 --max-filesize 100000 "$IP_URL" > "$TMPD/ipinfo" 2>/dev/null < /dev/null & wait $!
   body=$(< "$TMPD/ipinfo")
   [[ $body =~ \"ip\":\ *\"([^\"]*)\" ]] && PUB_IP=${BASH_REMATCH[1]}
   [[ $body =~ \"country\":\ *\"([^\"]*)\" ]] && cc=${BASH_REMATCH[1]}
   [[ $body =~ \"city\":\ *\"([^\"]*)\" ]] && city=${BASH_REMATCH[1]}
   [[ $body =~ \"org\":\ *\"([^\"]*)\" ]] && org=${BASH_REMATCH[1]}
   if [[ ! $PUB_IP =~ $re ]]; then
-    curl -s -m 5 "$IP_URL2" > "$TMPD/ipinfo" 2>/dev/null < /dev/null & wait $!
+    curl -fsS -m 5 --max-filesize 1000 "$IP_URL2" > "$TMPD/ipinfo" 2>/dev/null < /dev/null & wait $!
     PUB_IP=$(< "$TMPD/ipinfo")
     [[ $PUB_IP =~ $re ]] || PUB_IP=""
     return
   fi
   org=${org#AS[0-9]* }                          # "AS64500 EXAMPLE TEL..." -> "EXAMPLE TEL..."
-  for sfx in " S.A" " S.L" " SA" " SL" ", Inc" " Inc" " LLC" " Ltd" " GmbH" " B.V"; do
-    [[ $org == *"$sfx"* ]] && org=${org%"$sfx"*}           # no company type
+  org=${org%.}                                  # no company type at the end
+  for sfx in " S.A.U" " S.A" " S.L" " SAU" " SA" " SL" ", Inc" " Inc" " LLC" " Ltd" \
+             " GmbH" " AG" " B.V"; do
+    [[ $org == *"$sfx" ]] && { org=${org%"$sfx"}; break; }
   done
   ascii "$cc${city:+ $city}${org:+, $org}"; PUB_LOC=${A:0:33}
 }
@@ -930,7 +948,7 @@ ip_checker() { # its own background loop, writing "address|cgnat|place" to
 }
 speed_test() { # -> $DL_KBPS, the download speed in kbit/s (-1 failed)
   local b=""
-  curl -s -o /dev/null -m $SPEED_MAX_S -w '%{speed_download}' \
+  curl -fsS -o /dev/null -m $SPEED_MAX_S -w '%{speed_download}' \
     "${SPEED_URL}$(( SPEED_MB * 1000000 ))" > "$TMPD/speed" 2>/dev/null < /dev/null & wait $!
   read -r b < "$TMPD/speed"
   b=${b%%[.,]*}
