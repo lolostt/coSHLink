@@ -587,14 +587,16 @@ win_ipconfig() { # Windows: -> $GW, $GW_IF (adapter), $IF_IP its address, $WIFI_
     fi
   done < <(ipconfig 2>/dev/null)
 }
-gateway() { # -> $GW, the local router ("" if none), $GW_IF its interface
-  local dst gw flags netif re='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
-  GW=""; GW_IF=""
+gateway() { # -> $GW, the local router ("" if none), $GW_IF its interface,
+  # $TUN 1 if a default route goes through a tunnel (a VPN) (not on Windows)
+  local dst gw netif re='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
+  GW=""; GW_IF=""; TUN=0
   if (( WIN )); then win_ipconfig; return; fi
   if [[ $OS == linux ]]; then gateway_linux; return; fi
-  while read -r dst gw flags netif _; do   # the default route, not through a VPN
-    [[ $dst == default && $gw =~ $re && $netif != utun* && $netif != ipsec* ]] || continue
-    GW=$gw; GW_IF=$netif; break
+  while read -r dst gw _ netif _; do       # the default route, not through a VPN
+    [[ $dst == default ]] || continue
+    [[ $netif == utun* || $netif == ipsec* ]] && { TUN=1; continue; }
+    [[ -z $GW && $gw =~ $re ]] && { GW=$gw; GW_IF=$netif; }
   done < <(netstat -rn -f inet 2>/dev/null)
   if [[ -z $GW && -n $WIFI_IF ]]; then    # under a VPN that takes every route
     GW=$(ipconfig getoption "$WIFI_IF" router 2>/dev/null); GW_IF=$WIFI_IF
@@ -609,11 +611,12 @@ PREV_RX=-1; PREV_TX=-1; PREV_MS=0; PREV_IF=""
 gateway_linux() { # gateway from /proc/net/route (read with builtins): the
   local netif dst gw x a b c d  # default route with a router, not via a tunnel
   while read -r netif dst gw x; do
-    [[ $dst == 00000000 && $gw =~ ^[0-9A-Fa-f]{8}$ && $gw != 00000000 ]] || continue
-    [[ $netif == tun* || $netif == wg* || $netif == tap* ]] && continue
+    [[ $dst == 00000000 ]] || continue
+    [[ $netif == tun* || $netif == wg* || $netif == tap* ]] && { TUN=1; continue; }
+    [[ -z $GW && $gw =~ ^[0-9A-Fa-f]{8}$ && $gw != 00000000 ]] || continue
     # the address is in hex, lowest byte first: 0101A8C0 -> 192.168.1.1
     a=$(( 16#${gw:6:2} )); b=$(( 16#${gw:4:2} )); c=$(( 16#${gw:2:2} )); d=$(( 16#${gw:0:2} ))
-    GW="$a.$b.$c.$d"; GW_IF=$netif; break
+    GW="$a.$b.$c.$d"; GW_IF=$netif
   done 2>/dev/null < /proc/net/route
 }
 if_addr() { # if_addr INTERFACE -> $IFA, its IPv4 address ("" if none)
@@ -771,6 +774,9 @@ wifi_poll_win() { # wifi_poll from "netsh wlan show interfaces" (Spanish or Engl
   printable "$rate"; rate=${PR:0:9}; printable "$phy"; phy=${PR:0:10}
   WIFI="0|$ssid|$sec|$seclv|$band|$ch|$sig||$rate|$phy"
 }
+write_file() { # write_file FILE LINE: all at once (a reader never sees half)
+  printf '%s\n' "$2" > "$1.tmp" && mv -f "$1.tmp" "$1"
+}
 # The background loops wait on their children (wait returns at once on a
 # signal, a plain command does not), and on TERM stop them too: a ping, a
 # sleep or a download must not outlive the script.
@@ -857,6 +863,9 @@ public_ip() { # -> $PUB_IP the address the web sees ("" unknown), $PUB_LOC
 cgnat_check() { # -> $CGN=1 if a hop after the local router is in 100.64.0.0/10
   local line n=0 re='^[0-9]+[[:space:]][^.]*[^0-9.]([0-9]+)\.([0-9]+)\.[0-9]+\.[0-9]+'
   CGN=0
+  # through a VPN the hops are the tunnel's: Tailscale, for one, uses the
+  # same 100.64.0.0/10 and would look like carrier-grade NAT
+  (( TUN )) && return
   if (( WIN )); then tracert -d -h 5 -w 1000 "$INET_TARGET"
   else traceroute -n -m 5 -q 1 -w 1 "$INET_TARGET"
   fi > "$TMPD/trace" 2>&1 < /dev/null & wait $!
@@ -870,21 +879,22 @@ cgnat_check() { # -> $CGN=1 if a hop after the local router is in 100.64.0.0/10
   done < "$TMPD/trace"
 }
 ip_checker() { # its own background loop, writing "address|cgnat|place" to
-  local last=- key old="" next=0  # $RES.ip ("-" if none yet); "~" while it
-  bg_init
-  while kill -0 "$MAIN_PID" 2>/dev/null; do   # asks again on a new network
-    gateway
-    if (( WIN )); then key="$WIFI_IP $GW"
-    else if_addr "$WIFI_IF"; key="$IFA $GW"; fi
+  local ip=- loc="" key old="" next=0 ok=0  # $RES.ip: address "-" unknown,
+  bg_init                                   # "~" while it asks again
+  while kill -0 "$MAIN_PID" 2>/dev/null; do
+    gateway                           # a new network, or a VPN going up or
+    if (( WIN )); then key="$WIFI_IP $GW"   # down, asks again at once
+    else if_addr "$WIFI_IF"; key="$IFA $GW $GW_IF $TUN"; fi
     if [[ $key != "$old" ]] || (( SECONDS >= next )); then
-      [[ -n $old && $key != "$old" ]] && { last=-; printf '%s\n' "~|0|" > "$RES.ip"; }
+      [[ -n $old && $key != "$old" ]] && { ip=-; loc=""; write_file "$RES.ip" "~|0|"; }
       old=$key
       public_ip
-      [[ -n $PUB_IP ]] && last="$PUB_IP|0|$PUB_LOC"
-      [[ -s $RES.ip && $(< "$RES.ip") != "~|0|" ]] || printf '%s\n' "${last}" > "$RES.ip"  # at once
+      if [[ -n $PUB_IP ]]; then ip=$PUB_IP; loc=$PUB_LOC; ok=$SECONDS
+      elif (( SECONDS - ok > 2 * IP_S )); then ip=-; loc=""   # too old to show
+      fi
+      [[ $(< "$RES.ip") == "~|0|" || ! -s $RES.ip ]] && write_file "$RES.ip" "$ip|0|$loc"  # at once
       cgnat_check
-      [[ $last != - ]] && last="${last%%|*}|$CGN|${last#*|*|}"
-      printf '%s\n' "$last" > "$RES.ip.tmp" && mv -f "$RES.ip.tmp" "$RES.ip"
+      write_file "$RES.ip" "$ip|$CGN|$loc"
       if [[ -n $PUB_IP ]]; then next=$(( SECONDS + IP_S )); else next=$(( SECONDS + 30 )); fi
     fi
     nap 10
@@ -970,7 +980,7 @@ checker() { # the background loop
         fi
       else ZERO[j]=$(( ${ZERO[j]:-0} + 1 ))
       fi
-      lat=${PLAT[j]:--1}
+      lat=-1; (( P_OK )) && lat=${PLAT[j]}   # no reply this round: no latency
       if (( ZERO[j] >= DOWN_ROUNDS )); then
         st=2
         # a gateway that ignores pings while the internet answers
