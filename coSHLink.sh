@@ -680,6 +680,24 @@ ascii() { # ascii STRING -> $A, accents dropped ("Córdoba" -> "Cordoba")
     tr -d "'\`^~\"")
   printable "$A"; A=$PR
 }
+sec_short() { # sec_short SECURITY -> $SEC a short name, $SECLV its level:
+  # 0 fine (WPA2, WPA3, OWE), 1 weak or unknown, 2 open. macOS says
+  # "WPA2 Personal", Windows "WPA2-Personal" (in English or Spanish).
+  SEC=$1; SECLV=1
+  case $SEC in
+    "")                     SECLV=0; return ;;   # not known yet
+    *"Enhanced Open"*|*OWE*) SEC=OWE; SECLV=0; return ;;  # encrypted, no password
+    *None*|Open|Abierta)    SEC=OPEN; SECLV=2; return ;;
+    *WEP*)                  SEC=WEP; return ;;
+  esac
+  SEC=${SEC//[ -]Personal/}; SEC=${SEC//[ -]Enterprise/-Ent}; SEC=${SEC//-Empresa/-Ent}
+  SEC=${SEC// Transition/}; SEC=${SEC//\/WPA3/\/3}
+  printable "$SEC"; SEC=${PR:0:10}
+  case $SEC in
+    WPA|WPA-Ent|WPA/*) ;;                    # WPA1 still allowed: weak
+    *WPA2*|*WPA3*)     SECLV=0 ;;
+  esac                                       # anything else: unknown, amber
+}
 wifi_poll() { # -> $WIFI: "state|name|pad|security|level|band|channel|signal|
   local line cur=0 sec="" seclv=0 band="" ch="" sig="" noise="" rate="" phy=""
   local ssid="" name="" st re pad   # noise|rate|mode"
@@ -717,16 +735,9 @@ wifi_poll() { # -> $WIFI: "state|name|pad|security|level|band|channel|signal|
   fi
   [[ -z $ssid || $ssid == *redacted* ]] && ssid=$name
   [[ $ssid == *redacted* ]] && ssid=""
-  # short security name, and its level: 0 fine, 1 weak (WEP, WPA), 2 open
-  case $sec in
-    ""|*None*|*Open*) [[ -n $sec ]] && { sec=OPEN; seclv=2; } ;;
-    *WEP*)            sec=WEP; seclv=1 ;;
-    *)  sec=${sec// Personal/}; sec=${sec// Enterprise/-Ent}; sec=${sec//\/WPA3/\/3}
-        sec=${sec// Transition/}
-        [[ $sec == WPA || $sec == WPA-Ent || $sec == WPA/WPA2 ]] && seclv=1 ;;
-  esac
+  sec_short "$sec"; sec=$SEC; seclv=$SECLV
   fit_name "$ssid"; ssid=$FIT
-  printable "$sec"; sec=$PR; printable "$rate"; rate=$PR; printable "$phy"; phy=$PR
+  printable "$rate"; rate=${PR:0:9}; printable "$phy"; phy=${PR:0:10}
   WIFI="$st|$ssid|$sec|$seclv|$band|$ch|$sig|$noise|$rate|$phy"
 }
 wifi_poll_win() { # wifi_poll from "netsh wlan show interfaces" (Spanish or English)
@@ -751,15 +762,9 @@ wifi_poll_win() { # wifi_poll from "netsh wlan show interfaces" (Spanish or Engl
     esac
   done < <(netsh wlan show interfaces 2>/dev/null)
   (( st )) && { WIFI="$st|||||||||"; return; }
-  # short security name, and its level: 0 fine, 1 weak (WEP, WPA), 2 open
-  case $sec in
-    ""|Abierta|Open) [[ -n $sec ]] && { sec=OPEN; seclv=2; } ;;
-    *WEP*)           sec=WEP; seclv=1 ;;
-    *)  sec=${sec//-Personal/}; sec=${sec//-Enterprise/-Ent}; sec=${sec//-Empresa/-Ent}
-        [[ $sec == WPA || $sec == WPA-Ent ]] && seclv=1 ;;
-  esac
+  sec_short "$sec"; sec=$SEC; seclv=$SECLV
   fit_name "$ssid"; ssid=$FIT
-  printable "$sec"; sec=$PR; printable "$rate"; rate=$PR; printable "$phy"; phy=$PR
+  printable "$rate"; rate=${PR:0:9}; printable "$phy"; phy=${PR:0:10}
   WIFI="0|$ssid|$sec|$seclv|$band|$ch|$sig||$rate|$phy"
 }
 # The background loops wait on their children (wait returns at once on a
@@ -1138,6 +1143,7 @@ WBOX_BOT="└"
 for (( i = 0; i < WBOX_IN; i++ )); do WBOX_BOT+="─"; done
 WBOX_BOT+="┘"
 wline() { # wline ASCII_LENGTH STRING -> a Wi-Fi box row, padded to the box
+  # (the callers cut STRING to 22 characters: wline cannot, colors inside)
   local p
   printf -v p '%*s' $(( 22 - $1 < 0 ? 0 : 22 - $1 )) ''
   WL="${BOX_COLOR}│ $2${RESET}${p} ${BOX_COLOR}│"
@@ -1367,7 +1373,7 @@ while :; do
       wline $(( 5 + ${#t2} )) "${bars} ${LABEL_COLOR}${t2}"; WBOXL+=("$WL")
       t3=""; [[ -n ${W[10]} ]] && t3="${W[10]} Mb/s"
       [[ -n ${W[11]} ]] && t3+="${t3:+  }${W[11]}"
-      wline ${#t3} "${LABEL_COLOR}${t3}"; WBOXL+=("$WL")
+      t3=${t3:0:22}; wline ${#t3} "${LABEL_COLOR}${t3}"; WBOXL+=("$WL")
       # security, amber if weak, blinking red if open; then band and channel
       if (( W[5] == 2 )); then blink $(( RED + 8 )) $(( RED + 3 )); scol=${RAMP[BL]}
       elif (( W[5] == 1 )); then scol=${RAMP[16]}
@@ -1376,7 +1382,9 @@ while :; do
       sec=${W[4]:-?}; band=""
       if [[ -n ${W[7]} ]]; then
         if [[ ${W[6]} == 2.4 ]]; then band="2.4GHz  ch ${W[7]}"; else band="${W[6]} GHz  ch ${W[7]}"; fi
+        (( ${#sec} + 2 + ${#band} > 22 )) && band="${W[6]}GHz ch${W[7]}"   # tighter
       fi
+      sec=${sec:0:$(( 20 - ${#band} ))}  # the box is 22 wide: nothing may push its edge
       wline $(( ${#sec} + 2 + ${#band} )) "${scol}${sec}  ${LABEL_COLOR}${band}"; WBOXL+=("$WL")
     fi
     (( nobox )) || WBOXL+=("${BOX_COLOR}${WBOX_BOT}")
