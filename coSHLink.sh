@@ -323,25 +323,50 @@ for (( k = 0; k < 4 * COLS; k++ )); do
 done
 
 # Set before the trap: cleanup must never act on values from the environment
-TMPD=""; CHECK_PID=""; CLOCK_PID=""
-cleanup() {
+TMPD=""; CHECK_PID=""; CLOCK_PID=""; STTY=""
+cleanup() { # on every exit: stop the helpers, restore the terminal
+  trap - EXIT INT TERM HUP TSTP CONT
   kill $CHECK_PID $CLOCK_PID 2>/dev/null
   [[ -n $TMPD ]] && rm -rf "$TMPD"     # only the directory made below
-  printf '%s' "${ESC}[?25h${RESET}"
-  stty echo 2>/dev/null
+  term_restore
   echo
-  exit 0
 }
-trap cleanup INT TERM
-printf '%s' "${ESC}[?25l"
-stty -echo 2>/dev/null
+term_hide() { # hide the cursor and what is typed
+  printf '%s' "${ESC}[?25l"
+  [[ -t 0 ]] && stty -echo 2>/dev/null
+}
+term_restore() { # the cursor and the terminal settings as they were
+  printf '%s' "${ESC}[?25h${RESET}"
+  [[ -t 0 && -n $STTY ]] || return
+  # keys pressed while running would reach the shell after exit (an Enter
+  # among them runs a command): read and drop them first
+  stty -icanon min 0 time 0 2>/dev/null && cat > /dev/null
+  stty "$STTY" 2>/dev/null
+}
+suspend() { # Ctrl+Z: give the terminal back as it was, then stop
+  term_restore; trap - TSTP; kill -TSTP $$; trap suspend TSTP
+}
+resume() { # back in the foreground: hide again and draw it all anew below
+  term_hide; RESUMED=1
+}
+RESUMED=0
+[[ -t 0 ]] && STTY=$(stty -g 2>/dev/null)
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+trap suspend TSTP
+trap resume CONT
+trap '' PIPE                       # a dead helper gives a write error, not death
+term_hide
 
 # Millisecond clock (fixed step when EPOCHREALTIME is missing, bash < 5)
 TICK_MS=60
 NOW=0
 clock_tick() {
-  if (( CLOCK )); then
-    printf x >&4; read -r NOW <&5
+  if (( CLOCK )); then              # if the perl clock dies, carry on without it
+    { printf x >&4 && read -r NOW <&5 && [[ $NOW =~ ^[0-9]+$ ]]; } 2>/dev/null ||
+      { CLOCK=0; pause() { sleep 0.04; }; clock_tick; }
   elif [[ -n $EPOCHREALTIME ]]; then
     local t=${EPOCHREALTIME/[.,]/}
     NOW=$(( t / 1000 ))
@@ -465,7 +490,7 @@ screen() {
 # mktemp -d makes a new directory only this user can open; there is no
 # fallback to a fixed name, which another user could create first
 TMPD=$(mktemp -d "${TMPDIR:-/tmp}/coSHLink.XXXXXX" 2>/dev/null) || {
-  TMPD=""; echo "${0##*/}: cannot create a temporary directory" >&2; cleanup; }
+  TMPD=""; echo "${0##*/}: cannot create a temporary directory" >&2; exit 1; }
 RES=$TMPD/results
 : > "$RES"; : > "$RES.dns"; : > "$RES.ip"; : > "$RES.wifi"; : > "$RES.speed"
 MAIN_PID=$$
@@ -704,12 +729,22 @@ wifi_poll_win() { # wifi_poll from "netsh wlan show interfaces" (Spanish or Engl
   printable "$sec"; sec=$PR; printable "$rate"; rate=$PR; printable "$phy"; phy=$PR
   WIFI="0|$ssid|$sec|$seclv|$band|$ch|$sig||$rate|$phy"
 }
+# The background loops wait on their children (wait returns at once on a
+# signal, a plain command does not), and on TERM stop them too: a ping, a
+# sleep or a download must not outlive the script.
+bg_init() {
+  trap 'kill $(jobs -p) 2>/dev/null; exit 0' TERM
+}
+nap() { # nap SECONDS
+  sleep "$1" & wait $!
+}
 round_sleep() { # round_sleep PERIOD START: sleep what is left of a round
   local left=$(( $1 - (SECONDS - $2) ))   # that began at SECONDS = START
-  (( left > 0 )) && sleep $left
+  (( left > 0 )) && nap $left
 }
 wifi_checker() { # its own background loop, writing "round|$WIFI" to $RES.wifi
   local seq=0 t0
+  bg_init
   while kill -0 "$MAIN_PID" 2>/dev/null; do
     t0=$SECONDS
     wifi_poll; (( seq++ ))
@@ -734,6 +769,7 @@ dns_parse() { # dns_parse FILE: true if nslookup got an address; sets $DNS_SRV
 }
 dns_checker() { # its own background loop, writing "round state server" to
   local i k t0 st seq=0 zero=0 # $RES.dns: up if every name resolves, degraded
+  bg_init
   while kill -0 "$MAIN_PID" 2>/dev/null; do  # if only some do, down after
     t0=$SECONDS                               # DOWN_ROUNDS rounds with none
     st=-1; DNS_SRV=-                          # (-1 = no nslookup here)
@@ -758,13 +794,15 @@ public_ip() { # -> $PUB_IP the address the web sees ("" unknown), $PUB_LOC
   local body re='^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'
   local cc="" city="" org="" sfx   # "ES Madrid, EXAMPLE TELECOM" ("" unknown)
   PUB_IP=""; PUB_LOC=""
-  body=$(curl -s -m 5 "$IP_URL" 2>/dev/null < /dev/null)
+  curl -s -m 5 "$IP_URL" > "$TMPD/ipinfo" 2>/dev/null < /dev/null & wait $!
+  body=$(< "$TMPD/ipinfo")
   [[ $body =~ \"ip\":\ *\"([^\"]*)\" ]] && PUB_IP=${BASH_REMATCH[1]}
   [[ $body =~ \"country\":\ *\"([^\"]*)\" ]] && cc=${BASH_REMATCH[1]}
   [[ $body =~ \"city\":\ *\"([^\"]*)\" ]] && city=${BASH_REMATCH[1]}
   [[ $body =~ \"org\":\ *\"([^\"]*)\" ]] && org=${BASH_REMATCH[1]}
   if [[ ! $PUB_IP =~ $re ]]; then
-    PUB_IP=$(curl -s -m 5 "$IP_URL2" 2>/dev/null < /dev/null)
+    curl -s -m 5 "$IP_URL2" > "$TMPD/ipinfo" 2>/dev/null < /dev/null & wait $!
+    PUB_IP=$(< "$TMPD/ipinfo")
     [[ $PUB_IP =~ $re ]] || PUB_IP=""
     return
   fi
@@ -779,7 +817,7 @@ cgnat_check() { # -> $CGN=1 if a hop after the local router is in 100.64.0.0/10
   CGN=0
   if (( WIN )); then tracert -d -h 5 -w 1000 "$INET_TARGET"
   else traceroute -n -m 5 -q 1 -w 1 "$INET_TARGET"
-  fi > "$TMPD/trace" 2>&1 < /dev/null
+  fi > "$TMPD/trace" 2>&1 < /dev/null & wait $!
   while read -r line; do           # hop lines: "2  10.20.30.40  2.5 ms" or,
     line=" ${line//$'\r'/}"        # on Windows, "2  2 ms  2 ms  2 ms  10.20.30.40"
     [[ ${line# } =~ ^[0-9]+[[:space:]] ]] || continue
@@ -791,6 +829,7 @@ cgnat_check() { # -> $CGN=1 if a hop after the local router is in 100.64.0.0/10
 }
 ip_checker() { # its own background loop, writing "address|cgnat|place" to
   local last=- key old="" next=0  # $RES.ip ("-" if none yet); "~" while it
+  bg_init
   while kill -0 "$MAIN_PID" 2>/dev/null; do   # asks again on a new network
     gateway
     if (( WIN )); then key="$WIFI_IP $GW"
@@ -806,30 +845,33 @@ ip_checker() { # its own background loop, writing "address|cgnat|place" to
       printf '%s\n' "$last" > "$RES.ip.tmp" && mv -f "$RES.ip.tmp" "$RES.ip"
       if [[ -n $PUB_IP ]]; then next=$(( SECONDS + IP_S )); else next=$(( SECONDS + 30 )); fi
     fi
-    sleep 10
+    nap 10
   done
 }
 speed_test() { # -> $KBPS, the download speed in kbit/s (-1 failed)
-  local b
-  b=$(curl -s -o /dev/null -m $SPEED_MAX_S -w '%{speed_download}' \
-    "${SPEED_URL}$(( SPEED_MB * 1000000 ))" 2>/dev/null < /dev/null)
+  local b=""
+  curl -s -o /dev/null -m $SPEED_MAX_S -w '%{speed_download}' \
+    "${SPEED_URL}$(( SPEED_MB * 1000000 ))" > "$TMPD/speed" 2>/dev/null < /dev/null & wait $!
+  read -r b < "$TMPD/speed"
   b=${b%%[.,]*}
   if [[ $b =~ ^[0-9]+$ ]] && (( b > 0 )); then KBPS=$(( b * 8 / 1000 )); else KBPS=-1; fi
 }
 speed_checker() { # its own background loop, writing "round kbit/s" to
   local seq=0                    # $RES.speed (0 kbit/s = measuring)
-  sleep 3                        # after the first pings
+  nap 3                          # after the first pings
+  bg_init
   while kill -0 "$MAIN_PID" 2>/dev/null; do
     printf '%s\n' "$seq 0" > "$RES.speed"
     speed_test; (( seq++ ))
     printf '%s\n' "$seq $KBPS" > "$RES.speed.tmp" && mv -f "$RES.speed.tmp" "$RES.speed"
-    sleep $SPEED_S
+    nap $SPEED_S
   done
 }
 checker() { # the background loop
   local i j r t0 st lat loss lost sent L seq=0 out lip wifi med need lw
   local -a ok
   LOSTH=(); ZERO=(); PLAT=(); SLOW=()
+  bg_init
   while kill -0 "$MAIN_PID" 2>/dev/null && (( seq < ${1:-0} || ${1:-0} == 0 )); do
     t0=$SECONDS
     gateway; if_rate
@@ -912,7 +954,7 @@ if (( CHECK )); then                # --check: one read of each source, in text
   wait $!
   echo "  result: $(cat "$RES")"
   CHECK_PID=
-  cleanup
+  exit 0
 fi
 checker < /dev/null > /dev/null 2>&1 3<&- 4>&- 5<&- &
 CHECK_PID=$!
@@ -1077,8 +1119,11 @@ printf -v BUILD_LINE "%*s · %s · %s" $(( COLS - 4 - ${#YEAR} - ${#BUILD} )) "$
 TBOX_TOP="┌─ ${NAME_COLOR}TRAFFIC${BOX_COLOR} ──────┐"
 TBOX_BOT="└────────────────┘"
 PANEL_HEAD="${BOX_COLOR}${TBOX_TOP} ${LABEL_COLOR}  LINK      STATE      PING          LATENCY JITTER LOSS"
-for (( i = 1; i < LINES_N; i++ )); do echo; done   # reserve the lines; the last one has no newline,
-                                                    # so they fill the terminal without scrolling
+reserve_lines() { # make room: the last line gets no newline, so the lines
+  local i         # fill the terminal without scrolling
+  for (( i = 1; i < LINES_N; i++ )); do echo; done
+}
+reserve_lines
 spin() { # spin OFFSET -> $SP, a spinner frame
   SP=${SPIN[$(( (T / SPIN_MS + $1) % ${#SPIN[@]} ))]}
 }
@@ -1098,6 +1143,7 @@ map_seg() { # map_seg ROW COL -> $SEG, the map cells of ROW from COL to the end
 INFO_KEY=""; SCR_KEY=""; LIGHT_KEY=""; GLOBE_KEY=""; WBOX_KEY=""
 FIRST=1
 while :; do
+  if (( RESUMED )); then RESUMED=0; reserve_lines; FIRST=1; fi   # after Ctrl+Z
   clock_tick
   (( START < 0 )) && START=$NOW
   T=$(( NOW - START ))
@@ -1402,4 +1448,4 @@ while :; do
   printf '%s' "$out"
   pause
 done
-cleanup
+exit 0
