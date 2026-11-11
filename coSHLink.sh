@@ -117,13 +117,19 @@ ESC=$'\e'
 RESET="${ESC}[0m"
 BOLD="${ESC}[1m"
 
-# Color mode: 24-bit by default, 256 colors on macOS Terminal before 26.
+# Color mode: 24-bit when the terminal says it has it (COLORTERM), in the
+# terminals known to (Windows, Terminal of macOS 26 and later, iTerm2...),
+# 256 colors otherwise (Terminal of macOS 15 and earlier, a bare tmux).
 if [[ $COLOR_MODE == auto ]]; then
-  COLOR_MODE=24
-  if [[ $TERM_PROGRAM == Apple_Terminal ]]; then
-    macos=$(sw_vers -productVersion 2>/dev/null)
-    [[ -n $macos ]] && (( ${macos%%.*} < 26 )) && COLOR_MODE=256
-  fi
+  COLOR_MODE=256
+  case $COLORTERM in truecolor|24bit) COLOR_MODE=24 ;; esac
+  case $TERM_PROGRAM in
+    iTerm.app|WezTerm|ghostty|vscode|mintty) COLOR_MODE=24 ;;
+    Apple_Terminal)
+      macos=$(sw_vers -productVersion 2>/dev/null)
+      [[ $macos =~ ^[0-9]+ ]] && (( ${macos%%.*} >= 26 )) && COLOR_MODE=24 ;;
+  esac
+  [[ $OS == win ]] && COLOR_MODE=24  # Windows Terminal and mintty
 fi
 
 cube() { # level 0-255 -> index 0-5 of the 256-color cube, in $CUBE
