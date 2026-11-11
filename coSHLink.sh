@@ -113,6 +113,8 @@ PINGS=4                            # pings per target and round
 RUN_S=60                           # how long to run without --loop
 LINK_MBPS=(100 300)                # full scale of the traffic meters
 WIFI_S=15                          # seconds between reads of the Wi-Fi state
+SIG_DBM=(-55 -65 -75 -85)          # Wi-Fi signal, dBm, for 4, 3 (green), 2 (amber)
+                                   # and 1 bar (red); under the last, none
 DNS_NAMES=(www.google.com www.wikipedia.org) # names resolved each round
 # Public IP, with its country, city and operator, asked again every IP_S
 # seconds and at once when the computer joins another network. A route to the
@@ -170,7 +172,8 @@ rgb() { # rgb R G B -> $FG with the SGR parameters for the text color
 }
 
 # State colors: 0 = up (green), 1 = degraded (amber), 2 = down (red).
-# RAMP[s*9 + l]: state s at brightness l (0-1 faint, 7 plain, 8 hot head).
+# RAMP[s*9 + l]: state s (GREEN, AMBER, RED = 0, 9, 18: up, degraded, down)
+# at brightness l (0-1 faint, 7 plain, 8 hot head).
 # Every escape starts with 0; so it also clears bold from the text before.
 BASE=(40 210 90   245 175 30   225 45 45)
 RAMP=()
@@ -184,7 +187,7 @@ for (( s = 0; s < 3; s++ )); do
   rgb $(( (r0 + 255) / 2 )) $(( (g0 + 255) / 2 )) $(( (b0 + 255) / 2 ))
   RAMP[s*9+8]="${ESC}[0;${FG}m"
 done
-RED=18                             # offset of the red ramp in RAMP
+GREEN=0; AMBER=9; RED=18             # offsets of the three ramps in RAMP
 # Pilot lights, flickering between brightness 3 and 7 (as in RAMP): yellow
 # for the gateway, red for the power light of the PC tower
 LED_YEL=(); LED_RED=()
@@ -340,10 +343,10 @@ cell() { # cell ROW COL h|v
 # LUP: ms per cell of an up pulse; the short internet wire goes slower so
 # its pulse takes about as long per trip as the computer one
 LUP=(60 20)
-LINK_START[0]=${#P_IDX[@]}; LSLOW[0]=2; LTAIL[0]=3
+LINK_START[0]=${#P_IDX[@]}; LSLOW[W_SEQ]=2; LTAIL[0]=3
 for (( r = AP_R + 1; r >= 4; r-- )); do cell $r $MID_C v; done
 # link 1: computer -> gateway (right)
-LINK_START[1]=${#P_IDX[@]}; LSLOW[1]=1; LTAIL[1]=6
+LINK_START[1]=${#P_IDX[@]}; LSLOW[W_STATE]=1; LTAIL[1]=6
 for (( c = MAC_C + 13; c < AP_C; c++ )); do cell $LINK_R $c h; done
 DASH=(0 1)                          # 1: a dashed wire (Wi-Fi), 0 solid (cable)
 LINK_START[NL]=${#P_IDX[@]}
@@ -789,6 +792,9 @@ sec_short() { # sec_short SECURITY -> $SEC a short name, $SECLV its level:
     *WPA2*|*WPA3*)     SECLV=0 ;;
   esac                                       # anything else: unknown, amber
 }
+# Fields of the Wi-Fi file, "round|" + $WIFI, as read into W
+W_SEQ=0; W_STATE=1; W_NAME=2; W_PAD=3; W_SEC=4; W_SECLV=5; W_BAND=6; W_CH=7
+W_SIG=8; W_NOISE=9; W_RATE=10; W_MODE=11
 wifi_poll() { # -> $WIFI: "state|name|pad|security|level|band|channel|signal|
   # noise|rate|mode"
   # state: 0 joined, 1 on but not joined, 2 Wi-Fi off, 3 no Wi-Fi interface,
@@ -1185,7 +1191,7 @@ results() { # read the result files twice a second and take in what is new
   ln=""; read -r ln 2>/dev/null < "$RES.wifi"  # the Wi-Fi state
   if [[ -n $ln ]]; then
     IFS='|' read -r -a a <<< "$ln"
-    (( ${#a[@]} >= 2 )) && ints "${a[0]} ${a[1]} ${a[3]:-0} ${a[5]:-0} ${a[8]:-0} ${a[9]:-0}" &&
+    (( ${#a[@]} >= 2 )) && ints "${a[W_SEQ]} ${a[W_STATE]} ${a[W_PAD]:-0} ${a[W_SECLV]:-0} ${a[W_SIG]:-0} ${a[W_NOISE]:-0}" &&
       W=("${a[@]}")
   fi
   RD=()
@@ -1256,8 +1262,8 @@ ping_meter() { # ping_meter LINK STATE WIDTH: latency sparkline of the last
     else
       v=$(( r * 6 / c )); (( v > 7 )) && v=7  # the red threshold is ▇
       if (( r >= c )); then CELL+="${RAMP[RED+6]}${SPARK[v]}"
-      elif (( r >= w )); then CELL+="${RAMP[15]}${SPARK[v]}"
-      else CELL+="${RAMP[6]}${SPARK[v]}"
+      elif (( r >= w )); then CELL+="${RAMP[AMBER+6]}${SPARK[v]}"
+      else CELL+="${RAMP[GREEN+6]}${SPARK[v]}"
       fi
     fi
   done
@@ -1356,10 +1362,10 @@ render_status() { # the status box rows, top left: the overall state
     elif (( STATE[1] == 2 )); then msg="gateway down"
     else msg="no internet"
     fi
-  elif (( STATE[0] == 1 )); then icon="${RAMP[16]}${BOLD}◐"; msg="internet degraded"
+  elif (( STATE[0] == 1 )); then icon="${RAMP[AMBER+7]}${BOLD}◐"; msg="internet degraded"
   elif (( STATE[1] == 1 )); then
-    icon="${RAMP[16]}${BOLD}◐"; if (( WIRED )); then msg="LAN degraded"; else msg="Wi-Fi degraded"; fi
-  else icon="${RAMP[7]}${BOLD}●"; msg="online"
+    icon="${RAMP[AMBER+7]}${BOLD}◐"; if (( WIRED )); then msg="LAN degraded"; else msg="Wi-Fi degraded"; fi
+  else icon="${RAMP[GREEN+7]}${BOLD}●"; msg="online"
   fi
   printf -v pad '%*s' $(( SBOX_IN - 4 - ${#msg} )) ''
   OV=(); OVC=()                      # box rows over the map: text and map column
@@ -1422,8 +1428,8 @@ render_info() { # the texts around the map, redrawn only when what they show cha
       spin 5; ic=$SP; co=$SPIN_COLOR; msg="DNS"; mc=$LABEL_COLOR
     else
       case $DNS_ST in
-        0) ic=●; co=${RAMP[7]}; msg="DNS ok" ;;
-        1) ic=◐; co=${RAMP[16]}; msg="DNS partial" ;;
+        0) ic=●; co=${RAMP[GREEN+7]}; msg="DNS ok" ;;
+        1) ic=◐; co=${RAMP[AMBER+7]}; msg="DNS partial" ;;
         2) blink $(( RED + 8 )) $(( RED + 3 )); ic=○; co=${RAMP[BL]}; msg="DNS fail" ;;
         *) ic=·; co=$LABEL_COLOR; msg="DNS ?" ;;
       esac
@@ -1458,7 +1464,7 @@ render_info() { # the texts around the map, redrawn only when what they show cha
     fi
     clear_cells 4 $(( INFO_C + 2 )) 15
     if (( CGNAT )); then               # under the place, blinking amber
-      blink 17 12; text 4 $(( INFO_C + 2 )) "Possible CG-NAT" "${RAMP[BL]}"
+      blink $(( AMBER + 8 )) $(( AMBER + 3 )); text 4 $(( INFO_C + 2 )) "Possible CG-NAT" "${RAMP[BL]}"
     fi
     # download speed (--speed), under the warnings
     if (( SPEED_ON )); then
@@ -1483,7 +1489,7 @@ render_wifi_box() { # the Wi-Fi box rows, over the right of the map
   nobox=$(( WIRED || SEQ == 0 ))
   key="${W[*]}"
   (( wst < 0 )) && key+=" $(( T / SPIN_MS ))"
-  (( (wst > 0 && wst < 4) || W[5] == 2 )) && key+=" $(( T / 400 % 2 ))"
+  (( (wst > 0 && wst < 4) || W[W_SECLV] == 2 )) && key+=" $(( T / 400 % 2 ))"
   (( nobox )) && key=hidden
   if [[ $key != "$WBOX_KEY" ]]; then
     WBOX_KEY=$key
@@ -1504,17 +1510,17 @@ render_wifi_box() { # the Wi-Fi box rows, over the right of the map
       for k in 1 2 3; do wline 0 ""; WBOXL+=("$WL"); done
     else
       # signal: 4 bars, lit by the strength; green, amber or red
-      sig=${W[8]}; noise=${W[9]}; nb=0; bc=2
+      sig=${W[W_SIG]}; noise=${W[W_NOISE]}; nb=0; bc=2
       if [[ -n $sig ]]; then
-        if (( sig >= -55 )); then nb=4; bc=0
-        elif (( sig >= -65 )); then nb=3; bc=0
-        elif (( sig >= -75 )); then nb=2; bc=1
-        elif (( sig >= -85 )); then nb=1
+        if (( sig >= SIG_DBM[0] )); then nb=4; bc=0
+        elif (( sig >= SIG_DBM[1] )); then nb=3; bc=0
+        elif (( sig >= SIG_DBM[2] )); then nb=2; bc=1
+        elif (( sig >= SIG_DBM[3] )); then nb=1
         fi
       fi
-      if [[ -n ${W[2]} ]]; then
-        printf -v p '%*s' "${W[3]:-0}" ''
-        wline 20 "${RAMP[bc*9+7]}● ${NAME_COLOR}${W[2]}${p}"
+      if [[ -n ${W[W_NAME]} ]]; then
+        printf -v p '%*s' "${W[W_PAD]:-0}" ''
+        wline 20 "${RAMP[bc*9+7]}● ${NAME_COLOR}${W[W_NAME]}${p}"
       else
         wline 15 "${RAMP[bc*9+7]}● ${LABEL_COLOR}(name hidden)"
       fi
@@ -1529,18 +1535,18 @@ render_wifi_box() { # the Wi-Fi box rows, over the right of the map
       else t2="--"
       fi
       wline $(( 5 + ${#t2} )) "${bars} ${LABEL_COLOR}${t2}"; WBOXL+=("$WL")
-      t3=""; [[ -n ${W[10]} ]] && t3="${W[10]} Mb/s"
-      [[ -n ${W[11]} ]] && t3+="${t3:+  }${W[11]}"
+      t3=""; [[ -n ${W[W_RATE]} ]] && t3="${W[W_RATE]} Mb/s"
+      [[ -n ${W[W_MODE]} ]] && t3+="${t3:+  }${W[W_MODE]}"
       t3=${t3:0:22}; wline ${#t3} "${LABEL_COLOR}${t3}"; WBOXL+=("$WL")
       # security, amber if weak, blinking red if open; then band and channel
-      if (( W[5] == 2 )); then blink $(( RED + 8 )) $(( RED + 3 )); scol=${RAMP[BL]}
-      elif (( W[5] == 1 )); then scol=${RAMP[16]}
+      if (( W[W_SECLV] == 2 )); then blink $(( RED + 8 )) $(( RED + 3 )); scol=${RAMP[BL]}
+      elif (( W[W_SECLV] == 1 )); then scol=${RAMP[AMBER+7]}
       else scol=$LABEL_COLOR
       fi
-      sec=${W[4]:-?}; band=""
-      if [[ -n ${W[7]} ]]; then
-        if [[ ${W[6]} == 2.4 ]]; then band="2.4GHz  ch ${W[7]}"; else band="${W[6]} GHz  ch ${W[7]}"; fi
-        (( ${#sec} + 2 + ${#band} > 22 )) && band="${W[6]}GHz ch${W[7]}"   # tighter
+      sec=${W[W_SEC]:-?}; band=""
+      if [[ -n ${W[W_CH]} ]]; then
+        if [[ ${W[W_BAND]} == 2.4 ]]; then band="2.4GHz  ch ${W[W_CH]}"; else band="${W[W_BAND]} GHz  ch ${W[W_CH]}"; fi
+        (( ${#sec} + 2 + ${#band} > 22 )) && band="${W[W_BAND]}GHz ch${W[W_CH]}"   # tighter
       fi
       sec=${sec:0:$(( 20 - ${#band} ))}  # the box is 22 wide: nothing may push its edge
       wline $(( ${#sec} + 2 + ${#band} )) "${scol}${sec}  ${LABEL_COLOR}${band}"; WBOXL+=("$WL")
@@ -1577,16 +1583,16 @@ render_panel() { # the traffic box and the panel rows, one per link
     elif (( s == 2 )); then
       spin $j; info="${SPIN_COLOR}${SP} ${RAMP[RED+7]}reconnecting…"
     elif (( s == 3 )); then
-      info="${RAMP[16]}  no ping reply"
+      info="${RAMP[AMBER+7]}  no ping reply"
     else
       lat=${LAT[j]}; (( lat > 9999 )) && lat=9999; (( lat < 0 )) && lat=--
       jit=${JIT[j]}; (( jit > 999 )) && jit=999; (( jit < 0 )) && jit=--
       # latency coloured by its own thresholds, jitter and loss by the state
       # (a link still up, such as Wi-Fi over a lone spike, stays green)
-      if (( s == 0 )); then lc=7
+      if (( s == 0 )); then lc=$(( GREEN + 7 ))
       elif (( LAT[j] >= LAT_CRIT[j] )); then lc=$(( RED + 7 ))
-      elif (( LAT[j] >= LAT_WARN[j] )); then lc=16
-      else lc=7
+      elif (( LAT[j] >= LAT_WARN[j] )); then lc=$(( AMBER + 7 ))
+      else lc=$(( GREEN + 7 ))
       fi
       printf -v lat '%4s ms' "$lat"; printf -v jit ' %3s ms' "$jit"
       printf -v info ' %3s%%' "${LOSS[j]}"
@@ -1667,7 +1673,7 @@ main_loop() { # the animation: one frame per turn
     T=$(( NOW - START ))
     (( LOOP == 0 && T >= RUN_S * 1000 )) && break
     results
-    wst=${W[1]:--1}                    # Wi-Fi state, -1 not read yet
+    wst=${W[W_STATE]:--1}                    # Wi-Fi state, -1 not read yet
 
     render_status
     render_map
