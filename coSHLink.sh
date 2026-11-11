@@ -1268,6 +1268,7 @@ to_line() { # to_line LINE: add to $out the move from line $CUR to LINE
 # The first frame sends every line; later frames send only the map cells
 # that changed (CHG), the box rows that changed and the two panel rows.
 OV_PREV=()                          # last box rows sent, by map row
+PANEL_PREV=()                       # last panel rows sent
 map_seg() { # map_seg ROW COL -> $SEG, the map cells of ROW from COL to the end
   local k last="" c
   SEG=""
@@ -1385,7 +1386,8 @@ while :; do
         *)                       t=$DNS_SERVER ;;
       esac
       [[ $t != "$DNS_SERVER" ]] && t+=" $DNS_SERVER"
-      text 1 $(( INFO_C + 3 + ${#msg} )) "· ${t:0:$(( 28 - ${#msg} ))}" "$LABEL_COLOR"
+      put 1 $(( INFO_C + 3 + ${#msg} )) "·" "$LABEL_COLOR"   # not ASCII: one cell
+      text 1 $(( INFO_C + 5 + ${#msg} )) "${t:0:$(( 26 - ${#msg} ))}" "$LABEL_COLOR"
     fi
     # public IP, on the line of its label, then its place and operator
     clear_cells 2 $(( INFO_C + 13 )) 20
@@ -1556,7 +1558,7 @@ while :; do
     done
     out+="${ESC}[K"$'\n'
     out+="${ESC}[G${SP2}${PANEL_HEAD}${RESET}${ESC}[K"$'\n'
-    for (( j = 0; j < NL; j++ )); do out+="${ESC}[G${PANEL[j]}"$'\n'; done
+    for (( j = 0; j < NL; j++ )); do out+="${ESC}[G${PANEL[j]}"$'\n'; PANEL_PREV[j]=${PANEL[j]}; done
     out+="${ESC}[G${SP2}${BOX_COLOR}${TBOX_BOT}${RESET}${ESC}[K"$'\n'
     out+="${ESC}[G${BUILD_COLOR}${BUILD_LINE}${RESET}${ESC}[K"
   else
@@ -1579,8 +1581,10 @@ while :; do
       to_line $(( r + 1 ))
       out+="${ESC}[$(( OVC[r] + 3 ))G${OV[r]}${RESET}"; last=""
     done
-    for (( j = 0; j < NL; j++ )); do # the panel rows, after the header line
-      to_line $(( ROWS + 3 + j ))
+    for (( j = 0; j < NL; j++ )); do # the panel rows that changed
+      [[ ${PANEL[j]} == "${PANEL_PREV[j]}" ]] && continue
+      PANEL_PREV[j]=${PANEL[j]}
+      to_line $(( ROWS + 3 + j ))    # (after the header line)
       out+="${ESC}[G${PANEL[j]}"
     done
     to_line $(( LINES_N - 1 ))       # back to the last line
