@@ -1112,7 +1112,7 @@ checker() { # the background loop
 }
 
 needs() { # the tools this system needs, and those that are missing
-  local t miss="" all="curl nslookup iconv"
+  local t miss="" all="ping curl nslookup iconv"
   case $OS in
     mac)   all+=" netstat ipconfig networksetup system_profiler traceroute" ;;
     linux) all+=" ip traceroute" ;;
