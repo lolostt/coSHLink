@@ -1259,6 +1259,12 @@ spin() { # spin OFFSET -> $SP, a spinner frame
 }
 
 START=-1
+to_line() { # to_line LINE: add to $out the move from line $CUR to LINE
+  if (( $1 > CUR )); then out+="${ESC}[$(( $1 - CUR ))B"
+  elif (( $1 < CUR )); then out+="${ESC}[$(( CUR - $1 ))A"
+  fi
+  CUR=$1
+}
 # The first frame sends every line; later frames send only the map cells
 # that changed (CHG), the box rows that changed and the two panel rows.
 OV_PREV=()                          # last box rows sent, by map row
@@ -1529,11 +1535,14 @@ while :; do
     PANEL+=("${SP2}${TBOX[1-j]} ${LABEL_COLOR}⇄ ${NAME_COLOR}${name} ${RAMP[vs*9+7]}${BOLD}${st} ${CELL} ${info}${RESET}${ESC}[K")
   done
 
+  # Lines start with ESC[G (column 1), not \r: Git Bash drops a leading \r
+  # from an unquoted array word (commit 8f20c90), and one rule everywhere
+  # keeps that from coming back.
   if (( FIRST )); then               # every line, from the blank one on top
     FIRST=0
-    out="${ESC}[$(( LINES_N - 1 ))A"$'\r'"${ESC}[K"$'\n'
+    out="${ESC}[$(( LINES_N - 1 ))A${ESC}[G${ESC}[K"$'\n'
     for (( r = 0; r < ROWS; r++ )); do
-      line=$'\r'"$SP2"; last=""; c=0; end=$COLS
+      line="${ESC}[G$SP2"; last=""; c=0; end=$COLS
       if [[ -n ${OV[r]} ]]; then
         if (( OVC[r] == 0 )); then line+=${OV[r]}; c=$SBOX_W; else end=${OVC[r]}; fi
       fi
@@ -1546,19 +1555,15 @@ while :; do
       OV_PREV[r]=${OV[r]}
     done
     out+="${ESC}[K"$'\n'
-    out+=$'\r'"${SP2}${PANEL_HEAD}${RESET}${ESC}[K"$'\n'
-    for (( j = 0; j < NL; j++ )); do out+=$'\r'"${PANEL[j]}"$'\n'; done
-    out+=$'\r'"${SP2}${BOX_COLOR}${TBOX_BOT}${RESET}${ESC}[K"$'\n'
-    out+=$'\r'"${BUILD_COLOR}${BUILD_LINE}${RESET}${ESC}[K"
+    out+="${ESC}[G${SP2}${PANEL_HEAD}${RESET}${ESC}[K"$'\n'
+    for (( j = 0; j < NL; j++ )); do out+="${ESC}[G${PANEL[j]}"$'\n'; done
+    out+="${ESC}[G${SP2}${BOX_COLOR}${TBOX_BOT}${RESET}${ESC}[K"$'\n'
+    out+="${ESC}[G${BUILD_COLOR}${BUILD_LINE}${RESET}${ESC}[K"
   else
     # changed cells only: line 0 is the blank line on top, map row r is line r + 1
-    out=$'\r'"${ESC}[$(( LINES_N - 1 ))A"; cur=0; last=""
+    out="${ESC}[G${ESC}[$(( LINES_N - 1 ))A"; CUR=0; last=""
     for k in "${CHG[@]}"; do
-      r=$(( k / COLS + 1 ))
-      if (( r > cur )); then out+="${ESC}[$(( r - cur ))B"
-      elif (( r < cur )); then out+="${ESC}[$(( cur - r ))A"
-      fi
-      cur=$r
+      to_line $(( k / COLS + 1 ))
       out+="${ESC}[$(( k % COLS + 3 ))G"
       [[ ${GCO[k]} != "$last" ]] && { last=${GCO[k]}; out+=$last; }
       out+=${GCH[k]}
@@ -1566,18 +1571,14 @@ while :; do
     for r in "${!OV[@]}"; do         # box rows that changed
       [[ ${OV[r]} == "${OV_PREV[r]}" ]] && continue
       OV_PREV[r]=${OV[r]}
-      (( r + 1 > cur )) && out+="${ESC}[$(( r + 1 - cur ))B"
-      (( r + 1 < cur )) && out+="${ESC}[$(( cur - r - 1 ))A"
-      cur=$(( r + 1 ))
+      to_line $(( r + 1 ))
       out+="${ESC}[$(( OVC[r] + 3 ))G${OV[r]}${RESET}"; last=""
     done
-    r=$(( ROWS + 3 ))                # the panel rows, after the header line
-    (( r > cur )) && out+="${ESC}[$(( r - cur ))B"
-    (( r < cur )) && out+="${ESC}[$(( cur - r ))A"
-    for (( j = 0; j < NL; j++ )); do
-      out+=$'\r'"${PANEL[j]}"; (( j < NL - 1 )) && out+="${ESC}[B"
+    for (( j = 0; j < NL; j++ )); do # the panel rows, after the header line
+      to_line $(( ROWS + 3 + j ))
+      out+="${ESC}[G${PANEL[j]}"
     done
-    out+="${ESC}[$(( LINES_N - 1 - r - NL + 1 ))B"   # back to the last line
+    to_line $(( LINES_N - 1 ))       # back to the last line
   fi
   CHG=()
   printf '%s' "$out"
