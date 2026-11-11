@@ -991,9 +991,30 @@ speed_checker() { # its own background loop, writing "round kbit/s" to
     nap $SPEED_S
   done
 }
+median() { # median N...: -> $MED, the median of the values that are not < 0
+  local -a ok=()
+  local r i
+  for r; do                          # insertion sort: at most PINGS values
+    (( r < 0 )) && continue
+    for (( i = ${#ok[@]}; i > 0 && ok[i-1] > r; i-- )); do ok[i]=${ok[i-1]}; done
+    ok[i]=$r
+  done
+  i=${#ok[@]}; MED=-1
+  (( i )) && MED=$(( (ok[(i-1)/2] + ok[i/2]) / 2 ))
+}
+classify_link() { # classify_link ZERO SLOW LOSS NEED LOSS_WARN IS_GATEWAY INET_UP
+  # -> $ST, the state of a link: 0 up, 1 degraded, 2 down, 3 a gateway that
+  # ignores pings while the internet answers. ZERO: rounds in a row with no
+  # reply; SLOW: rounds in a row at or over the latency warning; NEED: how
+  # many of those make it degraded; LOSS and LOSS_WARN in %.
+  if (( $1 >= DOWN_ROUNDS )); then
+    ST=2; (( $6 && $7 )) && ST=3
+  elif (( $2 >= $4 || $3 > $5 )); then ST=1
+  else ST=0
+  fi
+}
 checker() { # the background loop
   local i j r t0 st lat loss lost sent L seq=0 out lip wifi med need lw busy
-  local -a ok
   LOSTH=(); ZERO=(); PLAT=(); SLOW=()
   bg_init
   while kill -0 "$MAIN_PID" 2>/dev/null && (( seq < ${1:-0} || ${1:-0} == 0 )); do
@@ -1035,15 +1056,7 @@ checker() { # the background loop
       if (( P_OK )); then
         ZERO[j]=0; PLAT[j]=$(( P_SUM / P_OK ))
         med=${PLAT[j]}
-        if (( wifi )); then          # the median of the replies, sorted
-          ok=()
-          for r in ${P_RTT[*]}; do
-            (( r < 0 )) && continue
-            for (( i = ${#ok[@]}; i > 0 && ok[i-1] > r; i-- )); do ok[i]=${ok[i-1]}; done
-            ok[i]=$r
-          done
-          i=${#ok[@]}; med=$(( (ok[(i-1)/2] + ok[i/2]) / 2 ))
-        fi
+        (( wifi )) && { median ${P_RTT[*]}; med=$MED; }
         if (( busy )); then :         # slow rounds neither counted nor reset
         elif (( med >= LAT_WARN[j] )); then SLOW[j]=$(( ${SLOW[j]:-0} + 1 ))
         else SLOW[j]=0
@@ -1051,13 +1064,9 @@ checker() { # the background loop
       else ZERO[j]=$(( ${ZERO[j]:-0} + 1 ))
       fi
       lat=-1; (( P_OK )) && lat=${PLAT[j]}   # no reply this round: no latency
-      if (( ZERO[j] >= DOWN_ROUNDS )); then
-        st=2
-        # a gateway that ignores pings while the internet answers
-        (( j == 1 && ZERO[0] == 0 && ${#GW} )) && { st=3; lat=-1; }
-      elif (( ${SLOW[j]:-0} >= need || loss > lw )); then st=1
-      else st=0
-      fi
+      classify_link ${ZERO[j]} ${SLOW[j]:-0} $loss $need $lw \
+        $(( j == 1 && ${#GW} > 0 )) $(( ZERO[0] == 0 )); st=$ST
+      (( st == 3 )) && lat=-1
       traffic_level $RATE ${LINK_MBPS[j]}
       out+=" $st $lat $loss $P_JIT $L $(( RATE < 0 ? -1 : RATE / 1000 )) ${P_RTT[*]}"
     done
@@ -1182,10 +1191,10 @@ fmt_speed() { # fmt_speed KBIT/S -> $SPEED, at most 4 characters ("940k", "8.2M"
   fi
 }
 
-# --- Panel meters: build $CELL, TW columns wide, for link $1 in state $2 ---
-TW=12
-traffic_meter() { # Braille throughput meter flowing left to right, as high as
-  local j=$1 s=$2 x ph v L=${TLV[$1]}  # the measured traffic level L
+# --- Panel meters: build $CELL, WIDTH columns wide, for link $1 in state $2 ---
+traffic_meter() { # traffic_meter LINK STATE WIDTH: Braille throughput meter
+  local j=$1 s=$2 TW=$3 x ph v L=${TLV[$1]}  # flowing left to right, as high
+                                             # as the measured traffic level L
   CELL=""
   if (( s == 2 )); then
     for (( x = 0; x < TW; x++ )); do CELL+="${RAMP[RED+2]}⣀"; done
@@ -1207,8 +1216,9 @@ traffic_meter() { # Braille throughput meter flowing left to right, as high as
     CELL+="${RAMP[s*9+3+v]}${BRAILLE[v]}"
   done
 }
-ping_meter() { # latency sparkline of the last TW samples, newest on the right
-  local j=$1 s=$2 x v r b w=${LAT_WARN[$1]} c=${LAT_CRIT[$1]}
+ping_meter() { # ping_meter LINK STATE WIDTH: latency sparkline of the last
+  local j=$1 s=$2 TW=$3 x v r b w=${LAT_WARN[$1]} c=${LAT_CRIT[$1]}  # WIDTH
+                                     # samples, newest on the right
   CELL=""
   if (( s == 2 )); then
     blink $(( RED + 8 )) $(( RED + 3 ))
@@ -1311,6 +1321,316 @@ map_seg() { # map_seg ROW COL -> $SEG, the map cells of ROW from COL to the end
 }
 INFO_KEY=""; SCR_KEY=""; LIGHT_KEY=""; GLOBE_KEY=""; WBOX_KEY=""
 FIRST=1
+render_status() { # the status box rows, top left: the overall state
+  # overall status line
+  inet_down=$(( SEQ && STATE[0] == 2 ))
+  if (( SEQ == 0 )); then             # first round still running
+    spin 0; icon="${SPIN_COLOR}${SP}"; msg="checking"
+  elif (( inet_down )); then
+    icon="${RAMP[RED+7]}${BOLD}○"
+    if (( WIRED )); then
+      if (( STATE[1] == 2 )); then msg="gateway down"; else msg="no internet"; fi
+    elif (( wst == 2 )); then msg="Wi-Fi off"
+    elif (( wst == 1 || wst == 3 )); then msg="no Wi-Fi"
+    elif (( STATE[1] == 2 )); then msg="gateway down"
+    else msg="no internet"
+    fi
+  elif (( STATE[0] == 1 )); then icon="${RAMP[16]}${BOLD}◐"; msg="internet degraded"
+  elif (( STATE[1] == 1 )); then
+    icon="${RAMP[16]}${BOLD}◐"; if (( WIRED )); then msg="LAN degraded"; else msg="Wi-Fi degraded"; fi
+  else icon="${RAMP[7]}${BOLD}●"; msg="online"
+  fi
+  printf -v pad '%*s' $(( SBOX_IN - 4 - ${#msg} )) ''
+  OV=(); OVC=()                      # box rows over the map: text and map column
+  OV[0]="${BOX_COLOR}${SBOX_TOP}"
+  OV[1]="${BOX_COLOR}│ ${icon} ${msg}${RESET}${pad} ${BOX_COLOR}│"
+  OV[2]="${BOX_COLOR}${SBOX_BOT}"
+  OVC[0]=0; OVC[1]=0; OVC[2]=0
+}
+render_map() { # the wires, the globe, the computer screen and the gateway lights
+  # map
+  for (( j = 0; j < NL; j++ )); do
+    s=${STATE[j]}; (( s == 3 )) && s=1
+    if (( SEQ )); then draw_wire $j $s; else still_wire $j; fi
+  done
+  if (( inet_down )); then           # red, blinking globe
+    blink $(( RED + 6 )) $(( RED + 2 )); gc=${RAMP[BL]}; tc="${RAMP[RED+7]}${BOLD}"
+  else gc=$C_o; tc=$NAME_COLOR
+  fi
+  if [[ "$gc$tc" != "$GLOBE_KEY" ]]; then
+    GLOBE_KEY="$gc$tc"
+    for k in "${GLOBE_CELLS[@]}"; do setc $k "${GCH[k]}" "$gc"; done
+    for k in "${INET_CELLS[@]}"; do setc $k "${GCH[k]}" "$tc"; done
+  fi
+  draw_screen
+  # gateway lights: a soft yellow flicker while it answers, red when it is down
+  s=${STATE[1]}; (( s == 3 )) && s=1
+  key="$SEQ $s $(( T / 250 )) $(( T / 400 % 2 ))"
+  if [[ $key != "$LIGHT_KEY" ]]; then
+    LIGHT_KEY=$key
+    for (( k = 0; k < 3; k++ )); do
+      c=$(( AP_C + 2 + k * 2 ))
+      if (( SEQ == 0 )); then put $(( AP_R + 3 )) $c "▪" "$DIM_COLOR"
+      elif (( s == 2 )); then blink $(( RED + 7 )) $(( RED + 2 )); put $(( AP_R + 3 )) $c "▪" "${RAMP[BL]}"
+      else
+        H=$(( T / 250 + k * 13 )); H=$(( (((H * 2654435761) ^ (H * 40503 >> 3)) >> 11) & 255 ))
+        put $(( AP_R + 3 )) $c "▪" "${LED_YEL[H%5]}"
+      fi
+    done
+    if (( WIN )); then               # the tower's power light flickers the same way
+      H=$(( T / 250 + 3 * 13 )); H=$(( (((H * 2654435761) ^ (H * 40503 >> 3)) >> 11) & 255 ))
+      put $(( MAC_R + 3 )) $(( MAC_C - 2 )) "▪" "${LED_RED[H%5]}"
+    fi
+  fi
+}
+render_info() { # the texts around the map, redrawn only when what they show changes
+  # the texts around the map, redrawn only when what they show changes
+  key="$GWIP|$LIP|$DSEQ $DNS_ST $DNS_SERVER|$PUB|$PLACE|$CGNAT|$SPD_SEQ $SPD"
+  (( DSEQ == 0 || DNS_ST == 2 || CGNAT )) && key+=" $(( T / 400 ))"
+  [[ -z $PUB || $PUB == "~" || ( SPEED_ON -eq 1 && ( SPD_SEQ -lt 0 || SPD -eq 0 ) ) ]] && key+=" $(( T / SPIN_MS ))"
+  (( DSEQ == 0 )) && key+=" $(( T / SPIN_MS ))"
+  if [[ $key != "$INFO_KEY" ]]; then
+    INFO_KEY=$key
+    # the gateway and computer addresses, under their drawings
+    clear_cells $(( TOP + 6 )) $(( MID_C - 8 )) 17
+    [[ -n $GWIP && $GWIP != - ]] && center $(( TOP + 6 )) $(( MID_C - 7 )) 15 "$GWIP" "$LABEL_COLOR"
+    clear_cells $(( TOP + 6 )) $MAC_C 15
+    [[ -n $LIP && $LIP != - ]] && center $(( TOP + 6 )) $MAC_C 15 "$LIP" "$LABEL_COLOR"
+    # DNS state, under the INTERNET label
+    if (( DSEQ == 0 )); then
+      spin 5; ic=$SP; co=$SPIN_COLOR; msg="DNS"; mc=$LABEL_COLOR
+    else
+      case $DNS_ST in
+        0) ic=●; co=${RAMP[7]}; msg="DNS ok" ;;
+        1) ic=◐; co=${RAMP[16]}; msg="DNS partial" ;;
+        2) blink $(( RED + 8 )) $(( RED + 3 )); ic=○; co=${RAMP[BL]}; msg="DNS fail" ;;
+        *) ic=·; co=$LABEL_COLOR; msg="DNS ?" ;;
+      esac
+      mc=$co
+    fi
+    clear_cells 1 $INFO_C 33
+    put 1 $INFO_C "$ic" "$co"
+    text 1 $(( INFO_C + 2 )) "$msg" "$mc"
+    # the server in use: the gateway, a well-known public one, or its address
+    if (( DSEQ )) && [[ $DNS_SERVER != - ]]; then
+      case $DNS_SERVER in
+        "$GWIP")                 t="gateway" ;;
+        1.1.1.1|1.0.0.1)         t="Cloudflare" ;;
+        8.8.8.8|8.8.4.4)         t="Google" ;;
+        9.9.9.9|149.112.112.112) t="Quad9" ;;
+        208.67.222.222|208.67.220.220) t="OpenDNS" ;;
+        *)                       t=$DNS_SERVER ;;
+      esac
+      [[ $t != "$DNS_SERVER" ]] && t+=" $DNS_SERVER"
+      put 1 $(( INFO_C + 3 + ${#msg} )) "·" "$LABEL_COLOR"   # not ASCII: one cell
+      text 1 $(( INFO_C + 5 + ${#msg} )) "${t:0:$(( 26 - ${#msg} ))}" "$LABEL_COLOR"
+    fi
+    # public IP, on the line of its label, then its place and operator
+    clear_cells 2 $(( INFO_C + 13 )) 20
+    clear_cells 3 $(( INFO_C + 2 )) 31
+    if [[ -z $PUB || $PUB == "~" ]]; then
+      spin 7; put 2 $(( INFO_C + 13 )) "$SP" "$SPIN_COLOR"
+    elif [[ $PUB == - ]]; then text 2 $(( INFO_C + 13 )) "?" "$LABEL_COLOR"
+    else
+      text 2 $(( INFO_C + 13 )) "$PUB" "$LABEL_COLOR"
+      text 3 $(( INFO_C + 2 )) "${PLACE:0:31}" "$LABEL_COLOR"
+    fi
+    clear_cells 4 $(( INFO_C + 2 )) 15
+    if (( CGNAT )); then               # under the place, blinking amber
+      blink 17 12; text 4 $(( INFO_C + 2 )) "Possible CG-NAT" "${RAMP[BL]}"
+    fi
+    # download speed (--speed), under the warnings
+    if (( SPEED_ON )); then
+      clear_cells 5 $INFO_C 33
+      put 5 $INFO_C "↓" "$LABEL_COLOR"
+      if (( SPD_SEQ < 0 || SPD == 0 )); then
+        spin 3; put 5 $(( INFO_C + 2 )) "$SP" "$SPIN_COLOR"
+        text 5 $(( INFO_C + 4 )) "measuring speed" "$LABEL_COLOR"
+      elif (( SPD < 0 )); then text 5 $(( INFO_C + 2 )) "speed test failed" "$LABEL_COLOR"
+      else
+        t="$(( SPD / 1000 )).$(( SPD / 100 % 10 )) Mb/s"
+        text 5 $(( INFO_C + 2 )) "$t" "$NAME_COLOR"
+        text 5 $(( INFO_C + 3 + ${#t} )) "download" "$LABEL_COLOR"
+      fi
+    fi
+  fi
+}
+render_wifi_box() { # the Wi-Fi box rows, over the right of the map
+  # Wi-Fi box: name, signal, rate and mode, then security and band
+  # (hidden on a cable, and until the first round tells cable from Wi-Fi:
+  # the map under it is drawn instead)
+  nobox=$(( WIRED || SEQ == 0 ))
+  key="${W[*]}"
+  (( wst < 0 )) && key+=" $(( T / SPIN_MS ))"
+  (( (wst > 0 && wst < 4) || W[5] == 2 )) && key+=" $(( T / 400 % 2 ))"
+  (( nobox )) && key=hidden
+  if [[ $key != "$WBOX_KEY" ]]; then
+    WBOX_KEY=$key
+    WBOXL=("${BOX_COLOR}${WBOX_TOP}")
+    if (( nobox )); then
+      WBOXL=()
+      for k in 0 1 2 3 4 5; do map_seg $(( WBOX_R + k )) $WBOX_C; WBOXL+=("$SEG"); done
+    elif (( wst < 0 )); then
+      spin 2; wline 9 "${SPIN_COLOR}${SP} ${LABEL_COLOR}reading"; WBOXL+=("$WL")
+      for k in 1 2 3; do wline 0 ""; WBOXL+=("$WL"); done
+    elif (( wst == 4 )); then
+      wline 19 "${LABEL_COLOR}· no details on Linux"; WBOXL+=("$WL")
+      for k in 1 2 3; do wline 0 ""; WBOXL+=("$WL"); done
+    elif (( wst != 0 )); then
+      case $wst in 2) msg="Wi-Fi off" ;; 3) msg="no Wi-Fi interface" ;; *) msg="not connected" ;; esac
+      blink $(( RED + 8 )) $(( RED + 3 ))
+      wline $(( 2 + ${#msg} )) "${RAMP[BL]}○ ${RAMP[RED+7]}${msg}"; WBOXL+=("$WL")
+      for k in 1 2 3; do wline 0 ""; WBOXL+=("$WL"); done
+    else
+      # signal: 4 bars, lit by the strength; green, amber or red
+      sig=${W[8]}; noise=${W[9]}; nb=0; bc=2
+      if [[ -n $sig ]]; then
+        if (( sig >= -55 )); then nb=4; bc=0
+        elif (( sig >= -65 )); then nb=3; bc=0
+        elif (( sig >= -75 )); then nb=2; bc=1
+        elif (( sig >= -85 )); then nb=1
+        fi
+      fi
+      if [[ -n ${W[2]} ]]; then
+        printf -v p '%*s' "${W[3]:-0}" ''
+        wline 20 "${RAMP[bc*9+7]}● ${NAME_COLOR}${W[2]}${p}"
+      else
+        wline 15 "${RAMP[bc*9+7]}● ${LABEL_COLOR}(name hidden)"
+      fi
+      WBOXL+=("$WL")
+      # bars, dBm and the signal to noise ratio
+      bars=""
+      for (( k = 0; k < 4; k++ )); do
+        if (( k < nb )); then bars+="${RAMP[bc*9+7]}${BARS[k]}"; else bars+="${DIM_COLOR}${BARS[k]}"; fi
+      done
+      if [[ -n $sig ]]; then
+        t2="$sig dBm"; [[ -n $noise ]] && t2+="  SNR $(( sig - noise ))"
+      else t2="--"
+      fi
+      wline $(( 5 + ${#t2} )) "${bars} ${LABEL_COLOR}${t2}"; WBOXL+=("$WL")
+      t3=""; [[ -n ${W[10]} ]] && t3="${W[10]} Mb/s"
+      [[ -n ${W[11]} ]] && t3+="${t3:+  }${W[11]}"
+      t3=${t3:0:22}; wline ${#t3} "${LABEL_COLOR}${t3}"; WBOXL+=("$WL")
+      # security, amber if weak, blinking red if open; then band and channel
+      if (( W[5] == 2 )); then blink $(( RED + 8 )) $(( RED + 3 )); scol=${RAMP[BL]}
+      elif (( W[5] == 1 )); then scol=${RAMP[16]}
+      else scol=$LABEL_COLOR
+      fi
+      sec=${W[4]:-?}; band=""
+      if [[ -n ${W[7]} ]]; then
+        if [[ ${W[6]} == 2.4 ]]; then band="2.4GHz  ch ${W[7]}"; else band="${W[6]} GHz  ch ${W[7]}"; fi
+        (( ${#sec} + 2 + ${#band} > 22 )) && band="${W[6]}GHz ch${W[7]}"   # tighter
+      fi
+      sec=${sec:0:$(( 20 - ${#band} ))}  # the box is 22 wide: nothing may push its edge
+      wline $(( ${#sec} + 2 + ${#band} )) "${scol}${sec}  ${LABEL_COLOR}${band}"; WBOXL+=("$WL")
+    fi
+    (( nobox )) || WBOXL+=("${BOX_COLOR}${WBOX_BOT}")
+  fi
+  for (( k = 0; k < ${#WBOXL[@]}; k++ )); do
+    OV[WBOX_R+k]=${WBOXL[k]}; OVC[WBOX_R+k]=$WBOX_C
+  done
+}
+render_panel() { # the traffic box and the panel rows, one per link
+  # the traffic box rows: the meter, then the speed, in the internet's colour
+  vs=${STATE[0]}; (( vs == 3 )) && vs=1
+  traffic_meter 0 $vs 14
+  TBOX=("${BOX_COLOR}│ ${CELL}${BOX_COLOR} │")
+  if (( KBPS[0] < 0 )); then spin 3; v="${SPIN_COLOR}${SP}"; k=1
+  else fmt_speed ${KBPS[0]}; v="${RAMP[vs*9+7]}${SPEED}b/s"; k=$(( ${#SPEED} + 3 ))
+  fi
+  printf -v p '%*s' $(( 9 - k )) ''
+  TBOX+=("${BOX_COLOR}│ ${LABEL_COLOR}speed${p}${v}${BOX_COLOR} │")
+
+  # one panel row per link: the gateway first, then the internet
+  PANEL=()
+  for j in 1 0; do
+    s=${STATE[j]}; vs=$s; (( vs == 3 )) && vs=1
+    name=${LINK_NAME[j]}; st=${STATE_NAME[s]}
+    (( SEQ )) || { spin $(( j + 6 )); st="  ${SPIN_COLOR}${SP}       "; }  # under the A
+    # ping sparkline + latency, jitter and loss
+    if (( SEQ == 0 )); then
+      # spinners in the units place of latency, jitter and loss
+      spin $j; info="   ${SPIN_COLOR}${SP}      "
+      spin $(( j + 2 )); info+="${SP}     "
+      spin $(( j + 4 )); info+="${SP}"
+    elif (( s == 2 )); then
+      spin $j; info="${SPIN_COLOR}${SP} ${RAMP[RED+7]}reconnecting…"
+    elif (( s == 3 )); then
+      info="${RAMP[16]}  no ping reply"
+    else
+      lat=${LAT[j]}; (( lat > 9999 )) && lat=9999; (( lat < 0 )) && lat=--
+      jit=${JIT[j]}; (( jit > 999 )) && jit=999; (( jit < 0 )) && jit=--
+      # latency coloured by its own thresholds, jitter and loss by the state
+      # (a link still up, such as Wi-Fi over a lone spike, stays green)
+      if (( s == 0 )); then lc=7
+      elif (( LAT[j] >= LAT_CRIT[j] )); then lc=$(( RED + 7 ))
+      elif (( LAT[j] >= LAT_WARN[j] )); then lc=16
+      else lc=7
+      fi
+      printf -v lat '%4s ms' "$lat"; printf -v jit ' %3s ms' "$jit"
+      printf -v info ' %3s%%' "${LOSS[j]}"
+      info="${RAMP[lc]}${lat}${RAMP[vs*9+7]}${jit}${info}"
+    fi
+    ping_meter $j $vs 13               # odd width: the ✕ of a cut link centred
+    PANEL+=("${SP2}${TBOX[1-j]} ${LABEL_COLOR}⇄ ${NAME_COLOR}${name} ${RAMP[vs*9+7]}${BOLD}${st} ${CELL} ${info}${RESET}${ESC}[K")
+  done
+}
+flush_frame() { # send what changed in this frame to the terminal
+  # Lines start with ESC[G (column 1), not \r: Git Bash drops a leading \r
+  # from an unquoted array word (commit 8f20c90), and one rule everywhere
+  # keeps that from coming back.
+  if (( FIRST )); then               # every line, from the blank one on top
+    FIRST=0
+    out="${ESC}[$(( LINES_N - 1 ))A${ESC}[G${ESC}[K"$'\n'
+    for (( r = 0; r < ROWS; r++ )); do
+      line="${ESC}[G$SP2"; last=""; c=0; end=$COLS
+      if [[ -n ${OV[r]} ]]; then
+        if (( OVC[r] == 0 )); then line+=${OV[r]}; c=$SBOX_W; else end=${OVC[r]}; fi
+      fi
+      for (( k = r * COLS + c; c < end; c++, k++ )); do
+        [[ ${GCO[k]} != "$last" ]] && { last=${GCO[k]}; line+=$last; }
+        line+=${GCH[k]}
+      done
+      [[ -n ${OV[r]} ]] && (( OVC[r] )) && line+=${OV[r]}
+      out+="${line}${RESET}${ESC}[K"$'\n'
+      OV_PREV[r]=${OV[r]}
+    done
+    out+="${ESC}[K"$'\n'
+    out+="${ESC}[G${SP2}${PANEL_HEAD}${RESET}${ESC}[K"$'\n'
+    for (( j = 0; j < NL; j++ )); do out+="${ESC}[G${PANEL[j]}"$'\n'; PANEL_PREV[j]=${PANEL[j]}; done
+    out+="${ESC}[G${SP2}${BOX_COLOR}${TBOX_BOT}${RESET}${ESC}[K"$'\n'
+    out+="${ESC}[G${BUILD_COLOR}${BUILD_LINE}${RESET}${ESC}[K"
+  else
+    # changed cells only: line 0 is the blank line on top, map row r is line r + 1
+    out="${ESC}[G${ESC}[$(( LINES_N - 1 ))A"; CUR=0; last=""
+    for k in "${CHG[@]}"; do
+      # a cell under a box shown over the map stays under it: the box is
+      # sent only when it changes, and a cell drawn over it would show
+      r=$(( k / COLS )); c=$(( k % COLS ))
+      (( r < 3 && c < SBOX_W )) && continue
+      (( ! nobox && r >= WBOX_R && r < WBOX_R + 6 && c >= WBOX_C )) && continue
+      to_line $(( r + 1 ))
+      out+="${ESC}[$(( k % COLS + 3 ))G"
+      [[ ${GCO[k]} != "$last" ]] && { last=${GCO[k]}; out+=$last; }
+      out+=${GCH[k]}
+    done
+    for r in "${!OV[@]}"; do         # box rows that changed
+      [[ ${OV[r]} == "${OV_PREV[r]}" ]] && continue
+      OV_PREV[r]=${OV[r]}
+      to_line $(( r + 1 ))
+      out+="${ESC}[$(( OVC[r] + 3 ))G${OV[r]}${RESET}"; last=""
+    done
+    for (( j = 0; j < NL; j++ )); do # the panel rows that changed
+      [[ ${PANEL[j]} == "${PANEL_PREV[j]}" ]] && continue
+      PANEL_PREV[j]=${PANEL[j]}
+      to_line $(( ROWS + 3 + j ))    # (after the header line)
+      out+="${ESC}[G${PANEL[j]}"
+    done
+    to_line $(( LINES_N - 1 ))       # back to the last line
+  fi
+  CHG=()
+  printf '%s' "$out"
+}
 main_loop() { # the animation: one frame per turn
   while :; do
     if (( RESUMED )); then RESUMED=0; reserve_lines; FIRST=1; fi   # after Ctrl+Z
@@ -1328,309 +1648,12 @@ main_loop() { # the animation: one frame per turn
     results
     wst=${W[1]:--1}                    # Wi-Fi state, -1 not read yet
 
-    # overall status line
-    inet_down=$(( SEQ && STATE[0] == 2 ))
-    if (( SEQ == 0 )); then             # first round still running
-      spin 0; icon="${SPIN_COLOR}${SP}"; msg="checking"
-    elif (( inet_down )); then
-      icon="${RAMP[RED+7]}${BOLD}○"
-      if (( WIRED )); then
-        if (( STATE[1] == 2 )); then msg="gateway down"; else msg="no internet"; fi
-      elif (( wst == 2 )); then msg="Wi-Fi off"
-      elif (( wst == 1 || wst == 3 )); then msg="no Wi-Fi"
-      elif (( STATE[1] == 2 )); then msg="gateway down"
-      else msg="no internet"
-      fi
-    elif (( STATE[0] == 1 )); then icon="${RAMP[16]}${BOLD}◐"; msg="internet degraded"
-    elif (( STATE[1] == 1 )); then
-      icon="${RAMP[16]}${BOLD}◐"; if (( WIRED )); then msg="LAN degraded"; else msg="Wi-Fi degraded"; fi
-    else icon="${RAMP[7]}${BOLD}●"; msg="online"
-    fi
-    printf -v pad '%*s' $(( SBOX_IN - 4 - ${#msg} )) ''
-    OV=(); OVC=()                      # box rows over the map: text and map column
-    OV[0]="${BOX_COLOR}${SBOX_TOP}"
-    OV[1]="${BOX_COLOR}│ ${icon} ${msg}${RESET}${pad} ${BOX_COLOR}│"
-    OV[2]="${BOX_COLOR}${SBOX_BOT}"
-    OVC[0]=0; OVC[1]=0; OVC[2]=0
-
-    # map
-    for (( j = 0; j < NL; j++ )); do
-      s=${STATE[j]}; (( s == 3 )) && s=1
-      if (( SEQ )); then draw_wire $j $s; else still_wire $j; fi
-    done
-    if (( inet_down )); then           # red, blinking globe
-      blink $(( RED + 6 )) $(( RED + 2 )); gc=${RAMP[BL]}; tc="${RAMP[RED+7]}${BOLD}"
-    else gc=$C_o; tc=$NAME_COLOR
-    fi
-    if [[ "$gc$tc" != "$GLOBE_KEY" ]]; then
-      GLOBE_KEY="$gc$tc"
-      for k in "${GLOBE_CELLS[@]}"; do setc $k "${GCH[k]}" "$gc"; done
-      for k in "${INET_CELLS[@]}"; do setc $k "${GCH[k]}" "$tc"; done
-    fi
-    draw_screen
-    # gateway lights: a soft yellow flicker while it answers, red when it is down
-    s=${STATE[1]}; (( s == 3 )) && s=1
-    key="$SEQ $s $(( T / 250 )) $(( T / 400 % 2 ))"
-    if [[ $key != "$LIGHT_KEY" ]]; then
-      LIGHT_KEY=$key
-      for (( k = 0; k < 3; k++ )); do
-        c=$(( AP_C + 2 + k * 2 ))
-        if (( SEQ == 0 )); then put $(( AP_R + 3 )) $c "▪" "$DIM_COLOR"
-        elif (( s == 2 )); then blink $(( RED + 7 )) $(( RED + 2 )); put $(( AP_R + 3 )) $c "▪" "${RAMP[BL]}"
-        else
-          H=$(( T / 250 + k * 13 )); H=$(( (((H * 2654435761) ^ (H * 40503 >> 3)) >> 11) & 255 ))
-          put $(( AP_R + 3 )) $c "▪" "${LED_YEL[H%5]}"
-        fi
-      done
-      if (( WIN )); then               # the tower's power light flickers the same way
-        H=$(( T / 250 + 3 * 13 )); H=$(( (((H * 2654435761) ^ (H * 40503 >> 3)) >> 11) & 255 ))
-        put $(( MAC_R + 3 )) $(( MAC_C - 2 )) "▪" "${LED_RED[H%5]}"
-      fi
-    fi
-
-    # the texts around the map, redrawn only when what they show changes
-    key="$GWIP|$LIP|$DSEQ $DNS_ST $DNS_SERVER|$PUB|$PLACE|$CGNAT|$SPD_SEQ $SPD"
-    (( DSEQ == 0 || DNS_ST == 2 || CGNAT )) && key+=" $(( T / 400 ))"
-    [[ -z $PUB || $PUB == "~" || ( SPEED_ON -eq 1 && ( SPD_SEQ -lt 0 || SPD -eq 0 ) ) ]] && key+=" $(( T / SPIN_MS ))"
-    (( DSEQ == 0 )) && key+=" $(( T / SPIN_MS ))"
-    if [[ $key != "$INFO_KEY" ]]; then
-      INFO_KEY=$key
-      # the gateway and computer addresses, under their drawings
-      clear_cells $(( TOP + 6 )) $(( MID_C - 8 )) 17
-      [[ -n $GWIP && $GWIP != - ]] && center $(( TOP + 6 )) $(( MID_C - 7 )) 15 "$GWIP" "$LABEL_COLOR"
-      clear_cells $(( TOP + 6 )) $MAC_C 15
-      [[ -n $LIP && $LIP != - ]] && center $(( TOP + 6 )) $MAC_C 15 "$LIP" "$LABEL_COLOR"
-      # DNS state, under the INTERNET label
-      if (( DSEQ == 0 )); then
-        spin 5; ic=$SP; co=$SPIN_COLOR; msg="DNS"; mc=$LABEL_COLOR
-      else
-        case $DNS_ST in
-          0) ic=●; co=${RAMP[7]}; msg="DNS ok" ;;
-          1) ic=◐; co=${RAMP[16]}; msg="DNS partial" ;;
-          2) blink $(( RED + 8 )) $(( RED + 3 )); ic=○; co=${RAMP[BL]}; msg="DNS fail" ;;
-          *) ic=·; co=$LABEL_COLOR; msg="DNS ?" ;;
-        esac
-        mc=$co
-      fi
-      clear_cells 1 $INFO_C 33
-      put 1 $INFO_C "$ic" "$co"
-      text 1 $(( INFO_C + 2 )) "$msg" "$mc"
-      # the server in use: the gateway, a well-known public one, or its address
-      if (( DSEQ )) && [[ $DNS_SERVER != - ]]; then
-        case $DNS_SERVER in
-          "$GWIP")                 t="gateway" ;;
-          1.1.1.1|1.0.0.1)         t="Cloudflare" ;;
-          8.8.8.8|8.8.4.4)         t="Google" ;;
-          9.9.9.9|149.112.112.112) t="Quad9" ;;
-          208.67.222.222|208.67.220.220) t="OpenDNS" ;;
-          *)                       t=$DNS_SERVER ;;
-        esac
-        [[ $t != "$DNS_SERVER" ]] && t+=" $DNS_SERVER"
-        put 1 $(( INFO_C + 3 + ${#msg} )) "·" "$LABEL_COLOR"   # not ASCII: one cell
-        text 1 $(( INFO_C + 5 + ${#msg} )) "${t:0:$(( 26 - ${#msg} ))}" "$LABEL_COLOR"
-      fi
-      # public IP, on the line of its label, then its place and operator
-      clear_cells 2 $(( INFO_C + 13 )) 20
-      clear_cells 3 $(( INFO_C + 2 )) 31
-      if [[ -z $PUB || $PUB == "~" ]]; then
-        spin 7; put 2 $(( INFO_C + 13 )) "$SP" "$SPIN_COLOR"
-      elif [[ $PUB == - ]]; then text 2 $(( INFO_C + 13 )) "?" "$LABEL_COLOR"
-      else
-        text 2 $(( INFO_C + 13 )) "$PUB" "$LABEL_COLOR"
-        text 3 $(( INFO_C + 2 )) "${PLACE:0:31}" "$LABEL_COLOR"
-      fi
-      clear_cells 4 $(( INFO_C + 2 )) 15
-      if (( CGNAT )); then               # under the place, blinking amber
-        blink 17 12; text 4 $(( INFO_C + 2 )) "Possible CG-NAT" "${RAMP[BL]}"
-      fi
-      # download speed (--speed), under the warnings
-      if (( SPEED_ON )); then
-        clear_cells 5 $INFO_C 33
-        put 5 $INFO_C "↓" "$LABEL_COLOR"
-        if (( SPD_SEQ < 0 || SPD == 0 )); then
-          spin 3; put 5 $(( INFO_C + 2 )) "$SP" "$SPIN_COLOR"
-          text 5 $(( INFO_C + 4 )) "measuring speed" "$LABEL_COLOR"
-        elif (( SPD < 0 )); then text 5 $(( INFO_C + 2 )) "speed test failed" "$LABEL_COLOR"
-        else
-          t="$(( SPD / 1000 )).$(( SPD / 100 % 10 )) Mb/s"
-          text 5 $(( INFO_C + 2 )) "$t" "$NAME_COLOR"
-          text 5 $(( INFO_C + 3 + ${#t} )) "download" "$LABEL_COLOR"
-        fi
-      fi
-    fi
-
-    # Wi-Fi box: name, signal, rate and mode, then security and band
-    # (hidden on a cable, and until the first round tells cable from Wi-Fi:
-    # the map under it is drawn instead)
-    nobox=$(( WIRED || SEQ == 0 ))
-    key="${W[*]}"
-    (( wst < 0 )) && key+=" $(( T / SPIN_MS ))"
-    (( (wst > 0 && wst < 4) || W[5] == 2 )) && key+=" $(( T / 400 % 2 ))"
-    (( nobox )) && key=hidden
-    if [[ $key != "$WBOX_KEY" ]]; then
-      WBOX_KEY=$key
-      WBOXL=("${BOX_COLOR}${WBOX_TOP}")
-      if (( nobox )); then
-        WBOXL=()
-        for k in 0 1 2 3 4 5; do map_seg $(( WBOX_R + k )) $WBOX_C; WBOXL+=("$SEG"); done
-      elif (( wst < 0 )); then
-        spin 2; wline 9 "${SPIN_COLOR}${SP} ${LABEL_COLOR}reading"; WBOXL+=("$WL")
-        for k in 1 2 3; do wline 0 ""; WBOXL+=("$WL"); done
-      elif (( wst == 4 )); then
-        wline 19 "${LABEL_COLOR}· no details on Linux"; WBOXL+=("$WL")
-        for k in 1 2 3; do wline 0 ""; WBOXL+=("$WL"); done
-      elif (( wst != 0 )); then
-        case $wst in 2) msg="Wi-Fi off" ;; 3) msg="no Wi-Fi interface" ;; *) msg="not connected" ;; esac
-        blink $(( RED + 8 )) $(( RED + 3 ))
-        wline $(( 2 + ${#msg} )) "${RAMP[BL]}○ ${RAMP[RED+7]}${msg}"; WBOXL+=("$WL")
-        for k in 1 2 3; do wline 0 ""; WBOXL+=("$WL"); done
-      else
-        # signal: 4 bars, lit by the strength; green, amber or red
-        sig=${W[8]}; noise=${W[9]}; nb=0; bc=2
-        if [[ -n $sig ]]; then
-          if (( sig >= -55 )); then nb=4; bc=0
-          elif (( sig >= -65 )); then nb=3; bc=0
-          elif (( sig >= -75 )); then nb=2; bc=1
-          elif (( sig >= -85 )); then nb=1
-          fi
-        fi
-        if [[ -n ${W[2]} ]]; then
-          printf -v p '%*s' "${W[3]:-0}" ''
-          wline 20 "${RAMP[bc*9+7]}● ${NAME_COLOR}${W[2]}${p}"
-        else
-          wline 15 "${RAMP[bc*9+7]}● ${LABEL_COLOR}(name hidden)"
-        fi
-        WBOXL+=("$WL")
-        # bars, dBm and the signal to noise ratio
-        bars=""
-        for (( k = 0; k < 4; k++ )); do
-          if (( k < nb )); then bars+="${RAMP[bc*9+7]}${BARS[k]}"; else bars+="${DIM_COLOR}${BARS[k]}"; fi
-        done
-        if [[ -n $sig ]]; then
-          t2="$sig dBm"; [[ -n $noise ]] && t2+="  SNR $(( sig - noise ))"
-        else t2="--"
-        fi
-        wline $(( 5 + ${#t2} )) "${bars} ${LABEL_COLOR}${t2}"; WBOXL+=("$WL")
-        t3=""; [[ -n ${W[10]} ]] && t3="${W[10]} Mb/s"
-        [[ -n ${W[11]} ]] && t3+="${t3:+  }${W[11]}"
-        t3=${t3:0:22}; wline ${#t3} "${LABEL_COLOR}${t3}"; WBOXL+=("$WL")
-        # security, amber if weak, blinking red if open; then band and channel
-        if (( W[5] == 2 )); then blink $(( RED + 8 )) $(( RED + 3 )); scol=${RAMP[BL]}
-        elif (( W[5] == 1 )); then scol=${RAMP[16]}
-        else scol=$LABEL_COLOR
-        fi
-        sec=${W[4]:-?}; band=""
-        if [[ -n ${W[7]} ]]; then
-          if [[ ${W[6]} == 2.4 ]]; then band="2.4GHz  ch ${W[7]}"; else band="${W[6]} GHz  ch ${W[7]}"; fi
-          (( ${#sec} + 2 + ${#band} > 22 )) && band="${W[6]}GHz ch${W[7]}"   # tighter
-        fi
-        sec=${sec:0:$(( 20 - ${#band} ))}  # the box is 22 wide: nothing may push its edge
-        wline $(( ${#sec} + 2 + ${#band} )) "${scol}${sec}  ${LABEL_COLOR}${band}"; WBOXL+=("$WL")
-      fi
-      (( nobox )) || WBOXL+=("${BOX_COLOR}${WBOX_BOT}")
-    fi
-    for (( k = 0; k < ${#WBOXL[@]}; k++ )); do
-      OV[WBOX_R+k]=${WBOXL[k]}; OVC[WBOX_R+k]=$WBOX_C
-    done
-
-    # the traffic box rows: the meter, then the speed, in the internet's colour
-    vs=${STATE[0]}; (( vs == 3 )) && vs=1
-    TW=14; traffic_meter 0 $vs; TW=12
-    TBOX=("${BOX_COLOR}│ ${CELL}${BOX_COLOR} │")
-    if (( KBPS[0] < 0 )); then spin 3; v="${SPIN_COLOR}${SP}"; k=1
-    else fmt_speed ${KBPS[0]}; v="${RAMP[vs*9+7]}${SPEED}b/s"; k=$(( ${#SPEED} + 3 ))
-    fi
-    printf -v p '%*s' $(( 9 - k )) ''
-    TBOX+=("${BOX_COLOR}│ ${LABEL_COLOR}speed${p}${v}${BOX_COLOR} │")
-
-    # one panel row per link: the gateway first, then the internet
-    PANEL=()
-    for j in 1 0; do
-      s=${STATE[j]}; vs=$s; (( vs == 3 )) && vs=1
-      name=${LINK_NAME[j]}; st=${STATE_NAME[s]}
-      (( SEQ )) || { spin $(( j + 6 )); st="  ${SPIN_COLOR}${SP}       "; }  # under the A
-      # ping sparkline + latency, jitter and loss
-      if (( SEQ == 0 )); then
-        # spinners in the units place of latency, jitter and loss
-        spin $j; info="   ${SPIN_COLOR}${SP}      "
-        spin $(( j + 2 )); info+="${SP}     "
-        spin $(( j + 4 )); info+="${SP}"
-      elif (( s == 2 )); then
-        spin $j; info="${SPIN_COLOR}${SP} ${RAMP[RED+7]}reconnecting…"
-      elif (( s == 3 )); then
-        info="${RAMP[16]}  no ping reply"
-      else
-        lat=${LAT[j]}; (( lat > 9999 )) && lat=9999; (( lat < 0 )) && lat=--
-        jit=${JIT[j]}; (( jit > 999 )) && jit=999; (( jit < 0 )) && jit=--
-        # latency coloured by its own thresholds, jitter and loss by the state
-        # (a link still up, such as Wi-Fi over a lone spike, stays green)
-        if (( s == 0 )); then lc=7
-        elif (( LAT[j] >= LAT_CRIT[j] )); then lc=$(( RED + 7 ))
-        elif (( LAT[j] >= LAT_WARN[j] )); then lc=16
-        else lc=7
-        fi
-        printf -v lat '%4s ms' "$lat"; printf -v jit ' %3s ms' "$jit"
-        printf -v info ' %3s%%' "${LOSS[j]}"
-        info="${RAMP[lc]}${lat}${RAMP[vs*9+7]}${jit}${info}"
-      fi
-      TW=13; ping_meter $j $vs; TW=12         # odd width: the ✕ of a cut link centred
-      PANEL+=("${SP2}${TBOX[1-j]} ${LABEL_COLOR}⇄ ${NAME_COLOR}${name} ${RAMP[vs*9+7]}${BOLD}${st} ${CELL} ${info}${RESET}${ESC}[K")
-    done
-
-    # Lines start with ESC[G (column 1), not \r: Git Bash drops a leading \r
-    # from an unquoted array word (commit 8f20c90), and one rule everywhere
-    # keeps that from coming back.
-    if (( FIRST )); then               # every line, from the blank one on top
-      FIRST=0
-      out="${ESC}[$(( LINES_N - 1 ))A${ESC}[G${ESC}[K"$'\n'
-      for (( r = 0; r < ROWS; r++ )); do
-        line="${ESC}[G$SP2"; last=""; c=0; end=$COLS
-        if [[ -n ${OV[r]} ]]; then
-          if (( OVC[r] == 0 )); then line+=${OV[r]}; c=$SBOX_W; else end=${OVC[r]}; fi
-        fi
-        for (( k = r * COLS + c; c < end; c++, k++ )); do
-          [[ ${GCO[k]} != "$last" ]] && { last=${GCO[k]}; line+=$last; }
-          line+=${GCH[k]}
-        done
-        [[ -n ${OV[r]} ]] && (( OVC[r] )) && line+=${OV[r]}
-        out+="${line}${RESET}${ESC}[K"$'\n'
-        OV_PREV[r]=${OV[r]}
-      done
-      out+="${ESC}[K"$'\n'
-      out+="${ESC}[G${SP2}${PANEL_HEAD}${RESET}${ESC}[K"$'\n'
-      for (( j = 0; j < NL; j++ )); do out+="${ESC}[G${PANEL[j]}"$'\n'; PANEL_PREV[j]=${PANEL[j]}; done
-      out+="${ESC}[G${SP2}${BOX_COLOR}${TBOX_BOT}${RESET}${ESC}[K"$'\n'
-      out+="${ESC}[G${BUILD_COLOR}${BUILD_LINE}${RESET}${ESC}[K"
-    else
-      # changed cells only: line 0 is the blank line on top, map row r is line r + 1
-      out="${ESC}[G${ESC}[$(( LINES_N - 1 ))A"; CUR=0; last=""
-      for k in "${CHG[@]}"; do
-        # a cell under a box shown over the map stays under it: the box is
-        # sent only when it changes, and a cell drawn over it would show
-        r=$(( k / COLS )); c=$(( k % COLS ))
-        (( r < 3 && c < SBOX_W )) && continue
-        (( ! nobox && r >= WBOX_R && r < WBOX_R + 6 && c >= WBOX_C )) && continue
-        to_line $(( r + 1 ))
-        out+="${ESC}[$(( k % COLS + 3 ))G"
-        [[ ${GCO[k]} != "$last" ]] && { last=${GCO[k]}; out+=$last; }
-        out+=${GCH[k]}
-      done
-      for r in "${!OV[@]}"; do         # box rows that changed
-        [[ ${OV[r]} == "${OV_PREV[r]}" ]] && continue
-        OV_PREV[r]=${OV[r]}
-        to_line $(( r + 1 ))
-        out+="${ESC}[$(( OVC[r] + 3 ))G${OV[r]}${RESET}"; last=""
-      done
-      for (( j = 0; j < NL; j++ )); do # the panel rows that changed
-        [[ ${PANEL[j]} == "${PANEL_PREV[j]}" ]] && continue
-        PANEL_PREV[j]=${PANEL[j]}
-        to_line $(( ROWS + 3 + j ))    # (after the header line)
-        out+="${ESC}[G${PANEL[j]}"
-      done
-      to_line $(( LINES_N - 1 ))       # back to the last line
-    fi
-    CHG=()
-    printf '%s' "$out"
+    render_status
+    render_map
+    render_info
+    render_wifi_box
+    render_panel
+    flush_frame
     pause
   done
 }
