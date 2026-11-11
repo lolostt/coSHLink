@@ -322,9 +322,11 @@ for (( k = 0; k < 4 * COLS; k++ )); do
   [[ ${GCO[k]} == "$NAME_COLOR" ]] && INET_CELLS+=($k)
 done
 
+# Set before the trap: cleanup must never act on values from the environment
+TMPD=""; CHECK_PID=""; CLOCK_PID=""
 cleanup() {
   kill $CHECK_PID $CLOCK_PID 2>/dev/null
-  rm -rf "$TMPD"
+  [[ -n $TMPD ]] && rm -rf "$TMPD"     # only the directory made below
   printf '%s' "${ESC}[?25h${RESET}"
   stty echo 2>/dev/null
   echo
@@ -460,8 +462,10 @@ screen() {
 # jitter, traffic level (-1 = unknown), traffic in kbit/s (-1 = unknown)
 # and the PINGS round trip times (-1 = lost). Other loops write the Wi-Fi
 # state, the DNS, the public IP and the speed to files of their own. ---
-TMPD=$(mktemp -d 2>/dev/null) || TMPD=${TMPDIR:-/tmp}/coSHLink.$$
-mkdir -p "$TMPD"
+# mktemp -d makes a new directory only this user can open; there is no
+# fallback to a fixed name, which another user could create first
+TMPD=$(mktemp -d "${TMPDIR:-/tmp}/coSHLink.XXXXXX" 2>/dev/null) || {
+  TMPD=""; echo "${0##*/}: cannot create a temporary directory" >&2; cleanup; }
 RES=$TMPD/results
 : > "$RES"; : > "$RES.dns"; : > "$RES.ip"; : > "$RES.wifi"; : > "$RES.speed"
 MAIN_PID=$$
@@ -470,7 +474,7 @@ MAIN_PID=$$
 # those nor a millisecond clock, so there a small perl process paces the
 # frames: asked for the time, it answers at most every FRAME_MS ms.
 FRAME_MS=40
-CLOCK=0; CLOCK_PID=""
+CLOCK=0
 if (( BASH_VERSINFO[0] >= 4 )) && mkfifo "$TMPD/tick" 2>/dev/null &&
    exec 3<> "$TMPD/tick"; then
   pause() { read -r -t 0.04 -u 3 _; }
@@ -939,24 +943,37 @@ push_samples() { # push_samples ROW FIRST_FIELD: append PINGS samples from R
   for (( x = 0; x < PINGS; x++ )); do SH[b+HW-PINGS+x]=${R[$2+x]}; done
 }
 DSEQ=0
+INTS_RE='^( -?[0-9]+)+ $'
+ints() { # ints "N N ...": true if every word is an integer
+  [[ " $1 " =~ $INTS_RE ]]
+}
 results() { # read the result files twice a second and take in what is new
   local slot=$(( T / 500 )) j o ln
   local -a a
   (( slot == RES_SLOT )) && return
   RES_SLOT=$slot
+  # Every field used in arithmetic must be a number: bash evaluates a
+  # variable's text as an expression there, and a[$(cmd)] would run cmd.
   RD=()
   read -r -a RD 2>/dev/null < "$RES.dns"   # the DNS has its own file
-  (( ${#RD[@]} == 3 && RD[0] != DSEQ )) && { DSEQ=${RD[0]}; DNS_ST=${RD[1]}; DNS_SERVER=${RD[2]}; }
+  (( ${#RD[@]} == 3 )) && ints "${RD[0]} ${RD[1]}" && (( RD[0] != DSEQ )) &&
+    { DSEQ=${RD[0]}; DNS_ST=${RD[1]}; DNS_SERVER=${RD[2]}; }
   ln=""; read -r ln 2>/dev/null < "$RES.ip"   # the public IP
-  if [[ -n $ln ]]; then IFS='|' read -r PUB CGNAT PLACE <<< "$ln"; fi
+  if [[ -n $ln ]]; then
+    IFS='|' read -r PUB CGNAT PLACE <<< "$ln"; [[ $CGNAT == 1 ]] || CGNAT=0
+  fi
   ln=""; read -r ln 2>/dev/null < "$RES.wifi"  # the Wi-Fi state
-  if [[ -n $ln ]]; then IFS='|' read -r -a a <<< "$ln"; (( ${#a[@]} >= 2 )) && W=("${a[@]}"); fi
+  if [[ -n $ln ]]; then
+    IFS='|' read -r -a a <<< "$ln"
+    (( ${#a[@]} >= 2 )) && ints "${a[0]} ${a[1]} ${a[3]:-0} ${a[5]:-0} ${a[8]:-0} ${a[9]:-0}" &&
+      W=("${a[@]}")
+  fi
   RD=()
   read -r -a RD 2>/dev/null < "$RES.speed"     # the download speed
-  (( ${#RD[@]} == 2 )) && { SPD_SEQ=${RD[0]}; SPD=${RD[1]}; }
+  (( ${#RD[@]} == 2 )) && ints "${RD[*]}" && { SPD_SEQ=${RD[0]}; SPD=${RD[1]}; }
   R=()
   read -r -a R 2>/dev/null < "$RES"
-  (( ${#R[@]} == NFIELDS && R[0] != SEQ )) || return
+  (( ${#R[@]} == NFIELDS )) && ints "${R[0]} ${R[2]} ${R[*]:4}" && (( R[0] != SEQ )) || return
   SEQ=${R[0]}; GWIP=${R[1]}; WIRED=${R[2]}; LIP=${R[3]}; DASH[1]=$(( ! WIRED )); o=4
   for (( j = 0; j < NL; j++ )); do
     STATE[j]=${R[o]}; LAT[j]=${R[o+1]}; LOSS[j]=${R[o+2]}; JIT[j]=${R[o+3]}
