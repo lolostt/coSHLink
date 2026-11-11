@@ -370,7 +370,9 @@ done
 TMPD=""; CHECK_PID=""; CLOCK_PID=""; STTY=""
 cleanup() { # on every exit: stop the helpers, restore the terminal
   trap - EXIT INT TERM HUP TSTP CONT WINCH
-  kill $CHECK_PID $CLOCK_PID 2>/dev/null
+  kill $CHECK_PID 2>/dev/null
+  # wait for the clock too, or bash 3.2 prints a "Terminated" notice
+  [[ -n $CLOCK_PID ]] && { kill $CLOCK_PID; wait $CLOCK_PID; } 2>/dev/null
   [[ -n $TMPD ]] && rm -rf "$TMPD"     # only the directory made below
   (( HIDDEN )) && { term_restore; echo; }
 }
