@@ -517,14 +517,19 @@ else
   pause() { sleep 0.04; }
 fi
 
-# The Wi-Fi interface (en0 on most Macs, "Wi-Fi" on Windows)
-if (( WIN )); then
-  WIFI_IF=$(netsh wlan show interfaces 2>/dev/null | tr -d '\r' |
-    awk -F' : ' '/^ +(Nombre|Name) +:/ { print $2; exit }')
-else
-  WIFI_IF=$(networksetup -listallhardwareports 2>/dev/null |
-    awk '/^Hardware Port: (Wi-Fi|AirPort)/ { getline; print $2; exit }')
-fi
+# The Wi-Fi interface (en0 on most Macs, "Wi-Fi" on Windows, the first with
+# a wireless directory in /sys on Linux)
+case $OS in
+  win) WIFI_IF=$(netsh wlan show interfaces 2>/dev/null | tr -d '\r' |
+         awk -F' : ' '/^ +(Nombre|Name) +:/ { print $2; exit }') ;;
+  mac) WIFI_IF=$(networksetup -listallhardwareports 2>/dev/null |
+         awk '/^Hardware Port: (Wi-Fi|AirPort)/ { getline; print $2; exit }') ;;
+  linux)
+    WIFI_IF=""
+    for f in /sys/class/net/*/wireless; do
+      [[ -d $f ]] && { WIFI_IF=${f%/wireless}; WIFI_IF=${WIFI_IF##*/}; break; }
+    done ;;
+esac
 UTF8=en_US.UTF-8                   # locale for counting the characters of names
 [[ ${LC_ALL:-${LC_CTYPE:-$LANG}} == *[Uu][Tt][Ff]*8* ]] && UTF8=${LC_ALL:-${LC_CTYPE:-$LANG}}
 
@@ -582,6 +587,7 @@ gateway() { # -> $GW, the local router ("" if none), $GW_IF its interface
   local dst gw flags netif re='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
   GW=""; GW_IF=""
   if (( WIN )); then win_ipconfig; return; fi
+  if [[ $OS == linux ]]; then gateway_linux; return; fi
   while read -r dst gw flags netif _; do   # the default route, not through a VPN
     [[ $dst == default && $gw =~ $re && $netif != utun* && $netif != ipsec* ]] || continue
     GW=$gw; GW_IF=$netif; break
@@ -596,6 +602,28 @@ gateway() { # -> $GW, the local router ("" if none), $GW_IF its interface
   [[ $GW =~ $re ]] || { GW=""; GW_IF=""; }
 }
 PREV_RX=-1; PREV_TX=-1; PREV_MS=0; PREV_IF=""
+gateway_linux() { # gateway from /proc/net/route (read with builtins): the
+  local netif dst gw x a b c d  # default route with a router, not via a tunnel
+  while read -r netif dst gw x; do
+    [[ $dst == 00000000 && $gw =~ ^[0-9A-Fa-f]{8}$ && $gw != 00000000 ]] || continue
+    [[ $netif == tun* || $netif == wg* || $netif == tap* ]] && continue
+    # the address is in hex, lowest byte first: 0101A8C0 -> 192.168.1.1
+    a=$(( 16#${gw:6:2} )); b=$(( 16#${gw:4:2} )); c=$(( 16#${gw:2:2} )); d=$(( 16#${gw:0:2} ))
+    GW="$a.$b.$c.$d"; GW_IF=$netif; break
+  done 2>/dev/null < /proc/net/route
+}
+if_addr() { # if_addr INTERFACE -> $IFA, its IPv4 address ("" if none)
+  local line re='inet ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)'
+  IFA=""
+  [[ -n $1 ]] || return
+  case $OS in
+    mac)   IFA=$(ipconfig getifaddr "$1" 2>/dev/null) ;;
+    linux) while IFS= read -r line; do
+             [[ $line =~ $re ]] && { IFA=${BASH_REMATCH[1]}; break; }
+           done < <(ip -4 -o addr show dev "$1" 2>/dev/null) ;;
+  esac
+  [[ $IFA =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || IFA=""
+}
 if_rate() { # -> $RATE bits/s through the gateway interface since the last call
   local -a f
   local line rx=-1 tx=-1 dt b
@@ -608,6 +636,9 @@ if_rate() { # -> $RATE bits/s through the gateway interface since the last call
       [[ -n $line && ( $GW_IF == "$line" || $GW_IF == *" $line" ) ]] || continue
       rx=${f[2]}; tx=${f[3]}; break
     done < <(netsh interface ipv4 show subinterfaces 2>/dev/null)
+  elif [[ $OS == linux ]]; then    # Linux: the counters in /sys, no process
+    read -r rx 2>/dev/null < "/sys/class/net/$GW_IF/statistics/rx_bytes"
+    read -r tx 2>/dev/null < "/sys/class/net/$GW_IF/statistics/tx_bytes"
   else
     while read -r -a f; do
       [[ ${f[2]} == "<Link"* ]] || continue
@@ -652,9 +683,11 @@ ascii() { # ascii STRING -> $A, accents dropped ("Córdoba" -> "Cordoba")
 wifi_poll() { # -> $WIFI: "state|name|pad|security|level|band|channel|signal|
   local line cur=0 sec="" seclv=0 band="" ch="" sig="" noise="" rate="" phy=""
   local ssid="" name="" st re pad   # noise|rate|mode"
-  # state: 0 joined, 1 on but not joined, 2 Wi-Fi off, 3 no Wi-Fi interface
+  # state: 0 joined, 1 on but not joined, 2 Wi-Fi off, 3 no Wi-Fi interface,
+  # 4 no details on this system (Linux)
   if [[ -z $WIFI_IF ]]; then WIFI="3|||||||||"; return; fi
   if (( WIN )); then wifi_poll_win; return; fi
+  if [[ $OS == linux ]]; then WIFI="4|||||||||"; return; fi  # no Wi-Fi details
   st=1
   # The name: hidden by macOS 15 and later unless "sudo ipconfig setverbose 1"
   while IFS= read -r line; do
@@ -833,7 +866,7 @@ ip_checker() { # its own background loop, writing "address|cgnat|place" to
   while kill -0 "$MAIN_PID" 2>/dev/null; do   # asks again on a new network
     gateway
     if (( WIN )); then key="$WIFI_IP $GW"
-    else key="$(ipconfig getifaddr "$WIFI_IF" 2>/dev/null) $GW"; fi
+    else if_addr "$WIFI_IF"; key="$IFA $GW"; fi
     if [[ $key != "$old" ]] || (( SECONDS >= next )); then
       [[ -n $old && $key != "$old" ]] && { last=-; printf '%s\n' "~|0|" > "$RES.ip"; }
       old=$key
@@ -884,8 +917,7 @@ checker() { # the background loop
     wait
     (( seq++ )); lip=""
     if (( WIN )); then lip=$IF_IP
-    elif [[ -n $GW_IF ]]; then lip=$(ipconfig getifaddr "$GW_IF" 2>/dev/null); fi
-    [[ $lip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || lip=""
+    else if_addr "$GW_IF"; lip=$IFA; fi
     out="$seq ${GW:--} 0 ${lip:--}"; wifi=1
     [[ -n $GW_IF && $GW_IF != "$WIFI_IF" ]] && { out="$seq $GW 1 ${lip:--}"; wifi=0; }  # 1: by cable
     if (( wifi )); then need=$WIFI_SLOW_ROUNDS; lw=$WIFI_LOSS_WARN; else need=1; lw=$LOSS_WARN; fi
@@ -1287,7 +1319,7 @@ while :; do
   nobox=$(( WIRED || SEQ == 0 ))
   key="${W[*]}"
   (( wst < 0 )) && key+=" $(( T / SPIN_MS ))"
-  (( wst > 0 || W[5] == 2 )) && key+=" $(( T / 400 % 2 ))"
+  (( (wst > 0 && wst < 4) || W[5] == 2 )) && key+=" $(( T / 400 % 2 ))"
   (( nobox )) && key=hidden
   if [[ $key != "$WBOX_KEY" ]]; then
     WBOX_KEY=$key
@@ -1297,6 +1329,9 @@ while :; do
       for k in 0 1 2 3 4 5; do map_seg $(( WBOX_R + k )) $WBOX_C; WBOXL+=("$SEG"); done
     elif (( wst < 0 )); then
       spin 2; wline 9 "${SPIN_COLOR}${SP} ${LABEL_COLOR}reading"; WBOXL+=("$WL")
+      for k in 1 2 3; do wline 0 ""; WBOXL+=("$WL"); done
+    elif (( wst == 4 )); then
+      wline 19 "${LABEL_COLOR}· no details on Linux"; WBOXL+=("$WL")
       for k in 1 2 3; do wline 0 ""; WBOXL+=("$WL"); done
     elif (( wst != 0 )); then
       case $wst in 2) msg="Wi-Fi off" ;; 3) msg="no Wi-Fi interface" ;; *) msg="not connected" ;; esac
