@@ -117,7 +117,7 @@ cube() { # level 0-255 -> index 0-5 of the 256-color cube, in $CUBE
   fi
 }
 
-fg() { # fg R G B -> $FG with the SGR parameters for the text color
+rgb() { # rgb R G B -> $FG with the SGR parameters for the text color
   if [[ $COLOR_MODE == 24 ]]; then FG="38;2;$1;$2;$3"; return; fi
   local lv=(0 95 135 175 215 255) ri gi bi cr cg cb k gv dc dg
   cube "$1"; ri=$CUBE; cube "$2"; gi=$CUBE; cube "$3"; bi=$CUBE
@@ -140,11 +140,11 @@ RAMP=()
 for (( s = 0; s < 3; s++ )); do
   r0=${BASE[s*3]}; g0=${BASE[s*3+1]}; b0=${BASE[s*3+2]}
   for (( l = 0; l < 8; l++ )); do
-    fg $(( 35 + (r0 - 35) * (l + 1) / 8 )) $(( 35 + (g0 - 35) * (l + 1) / 8 )) \
+    rgb $(( 35 + (r0 - 35) * (l + 1) / 8 )) $(( 35 + (g0 - 35) * (l + 1) / 8 )) \
        $(( 35 + (b0 - 35) * (l + 1) / 8 ))
     RAMP[s*9+l]="${ESC}[0;${FG}m"
   done
-  fg $(( (r0 + 255) / 2 )) $(( (g0 + 255) / 2 )) $(( (b0 + 255) / 2 ))
+  rgb $(( (r0 + 255) / 2 )) $(( (g0 + 255) / 2 )) $(( (b0 + 255) / 2 ))
   RAMP[s*9+8]="${ESC}[0;${FG}m"
 done
 RED=18                             # offset of the red ramp in RAMP
@@ -152,25 +152,25 @@ RED=18                             # offset of the red ramp in RAMP
 # for the gateway, red for the power light of the PC tower
 LED_YEL=(); LED_RED=()
 for (( l = 3; l < 8; l++ )); do
-  fg $(( 35 + 215 * (l + 1) / 8 )) $(( 35 + 180 * (l + 1) / 8 )) $(( 35 + 5 * (l + 1) / 8 ))
+  rgb $(( 35 + 215 * (l + 1) / 8 )) $(( 35 + 180 * (l + 1) / 8 )) $(( 35 + 5 * (l + 1) / 8 ))
   LED_YEL+=("${ESC}[0;${FG}m")
-  fg $(( 35 + 200 * (l + 1) / 8 )) $(( 35 + 5 * (l + 1) / 8 )) $(( 35 + 5 * (l + 1) / 8 ))
+  rgb $(( 35 + 200 * (l + 1) / 8 )) $(( 35 + 5 * (l + 1) / 8 )) $(( 35 + 5 * (l + 1) / 8 ))
   LED_RED+=("${ESC}[0;${FG}m")
 done
 
 SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
-fg 80 160 255; SPIN_COLOR="${ESC}[0;${FG}m"
+rgb 80 160 255; SPIN_COLOR="${ESC}[0;${FG}m"
 SPIN_MS=60
-fg 120 124 135; BOX_COLOR="${ESC}[0;${FG}m"
-fg 235 238 245; NAME_COLOR="${ESC}[0;1;${FG}m"
-fg 140 140 150; LABEL_COLOR="${ESC}[0;${FG}m"
-fg 85 88 98; BUILD_COLOR="${ESC}[0;${FG}m"
-fg 60 62 70; DIM_COLOR="${ESC}[0;${FG}m"
+rgb 120 124 135; BOX_COLOR="${ESC}[0;${FG}m"
+rgb 235 238 245; NAME_COLOR="${ESC}[0;1;${FG}m"
+rgb 140 140 150; LABEL_COLOR="${ESC}[0;${FG}m"
+rgb 85 88 98; BUILD_COLOR="${ESC}[0;${FG}m"
+rgb 60 62 70; DIM_COLOR="${ESC}[0;${FG}m"
 # the MacBook screen: faint lines of "text", the line being typed a little
 # brighter, and the cursor
-fg 55 75 105; SCR_COLOR="${ESC}[0;${FG}m"
-fg 85 115 160; SCR_HOT="${ESC}[0;${FG}m"
-fg 150 190 255; SCR_CUR="${ESC}[0;${FG}m"
+rgb 55 75 105; SCR_COLOR="${ESC}[0;${FG}m"
+rgb 85 115 160; SCR_HOT="${ESC}[0;${FG}m"
+rgb 150 190 255; SCR_CUR="${ESC}[0;${FG}m"
 
 BRAILLE=(" " ⣀ ⣤ ⣶ ⣿)
 SPARK=(▁ ▂ ▃ ▄ ▅ ▆ ▇ █)
@@ -211,11 +211,11 @@ clear_cells() { # clear_cells ROW COL WIDTH
 # Drawings: one string per row, "MASK|CHARS". CHARS holds one character per
 # cell ("_" = blank); MASK holds one color letter per cell:
 # m MacBook, k keyboard deck, a access point, n antenna, o globe (blue).
-fg 165 170 182; C_m="${ESC}[0;${FG}m"
-fg 120 124 135; C_k="${ESC}[0;${FG}m"
-fg 150 155 168; C_a="${ESC}[0;${FG}m"
-fg 110 114 125; C_n="${ESC}[0;${FG}m"
-fg 80 160 255;  C_o="${ESC}[0;${FG}m"
+rgb 165 170 182; C_m="${ESC}[0;${FG}m"
+rgb 120 124 135; C_k="${ESC}[0;${FG}m"
+rgb 150 155 168; C_a="${ESC}[0;${FG}m"
+rgb 110 114 125; C_n="${ESC}[0;${FG}m"
+rgb 80 160 255;  C_o="${ESC}[0;${FG}m"
 MAC=(
   "..mmmmmmmmmmm|_ _ ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐"
   "..m.........m|_ _ │ _ _ _ _ _ _ _ _ _ │"
@@ -375,7 +375,7 @@ clock_tick() {
   fi
 }
 
-hash() { # hash N -> $H, a pseudo-random 0-255 stable for each N
+rnd() { # rnd N -> $H, a pseudo-random 0-255 stable for each N
   H=$(( ((($1 * 2654435761) ^ ($1 * 40503 >> 3)) >> 11) & 255 ))
 }
 
@@ -447,10 +447,10 @@ draw_wire() {
 # The MacBook screen: faint lines of "text" scroll up one by one, the last
 # line being typed with a blinking cursor at its end
 SCR_MS=1400                         # ms per line
-screen() {
+draw_screen() {
   local r c n k len ind typed ch co cur key H
   n=$(( T / SCR_MS ))               # the line being typed
-  hash $(( n * 7 + 3 )); len=$(( 3 + H % 5 ))
+  rnd $(( n * 7 + 3 )); len=$(( 3 + H % 5 ))
   typed=$(( len * (T % SCR_MS) / (SCR_MS * 3 / 4) )); (( typed > len )) && typed=$len
   cur=$(( T / 500 % 2 == 0 ))
   key="$n $typed $cur"
@@ -458,7 +458,7 @@ screen() {
   for (( r = 0; r < 2; r++ )); do
     k=$(( n - 1 + r ))
     (( r < 1 )) && [[ ${SCR_KEY%% *} == "$n" ]] && continue   # only the last line moved
-    hash $(( k * 7 + 3 )); len=$(( 3 + H % 5 )); ind=$(( H / 8 % 3 * 2 ))
+    rnd $(( k * 7 + 3 )); len=$(( 3 + H % 5 )); ind=$(( H / 8 % 3 * 2 ))
     (( k % 5 == 4 )) && len=0       # now and then a blank line
     typed=$len; co=$SCR_COLOR
     (( r == 1 )) && { typed=$(( len * (T % SCR_MS) / (SCR_MS * 3 / 4) )); co=$SCR_HOT; }
@@ -653,7 +653,7 @@ if_rate() { # -> $RATE bits/s through the gateway interface since the last call
   fi
   PREV_RX=$rx; PREV_TX=$tx; PREV_MS=$MS
 }
-level() { # level BIT/S MBPS -> $L, traffic level 0-4 of a meter (-1 unknown)
+traffic_level() { # traffic_level BIT/S MBPS -> $L, traffic level 0-4 of a meter (-1 unknown)
   local pm=$(( $1 / ($2 * 1000) ))  # per mille of the full scale
   if (( $1 < 0 )); then L=-1
   elif (( $1 < 8000 )); then L=0
@@ -886,13 +886,13 @@ ip_checker() { # its own background loop, writing "address|cgnat|place" to
     nap 10
   done
 }
-speed_test() { # -> $KBPS, the download speed in kbit/s (-1 failed)
+speed_test() { # -> $DL_KBPS, the download speed in kbit/s (-1 failed)
   local b=""
   curl -s -o /dev/null -m $SPEED_MAX_S -w '%{speed_download}' \
     "${SPEED_URL}$(( SPEED_MB * 1000000 ))" > "$TMPD/speed" 2>/dev/null < /dev/null & wait $!
   read -r b < "$TMPD/speed"
   b=${b%%[.,]*}
-  if [[ $b =~ ^[0-9]+$ ]] && (( b > 0 )); then KBPS=$(( b * 8 / 1000 )); else KBPS=-1; fi
+  if [[ $b =~ ^[0-9]+$ ]] && (( b > 0 )); then DL_KBPS=$(( b * 8 / 1000 )); else DL_KBPS=-1; fi
 }
 speed_checker() { # its own background loop, writing "round kbit/s" to
   local seq=0                    # $RES.speed (0 kbit/s = measuring)
@@ -901,7 +901,7 @@ speed_checker() { # its own background loop, writing "round kbit/s" to
   while kill -0 "$MAIN_PID" 2>/dev/null; do
     printf '%s\n' "$seq 0" > "$RES.speed"
     speed_test; (( seq++ ))
-    printf '%s\n' "$seq $KBPS" > "$RES.speed.tmp" && mv -f "$RES.speed.tmp" "$RES.speed"
+    printf '%s\n' "$seq $DL_KBPS" > "$RES.speed.tmp" && mv -f "$RES.speed.tmp" "$RES.speed"
     nap $SPEED_S
   done
 }
@@ -962,7 +962,7 @@ checker() { # the background loop
       elif (( ${SLOW[j]:-0} >= need || loss > lw )); then st=1
       else st=0
       fi
-      level $RATE ${LINK_MBPS[j]}
+      traffic_level $RATE ${LINK_MBPS[j]}
       out+=" $st $lat $loss $P_JIT $L $(( RATE < 0 ? -1 : RATE / 1000 )) ${P_RTT[*]}"
     done
     printf '%s\n' "$out" > "$RES.tmp" && mv -f "$RES.tmp" "$RES"
@@ -985,7 +985,7 @@ if (( CHECK )); then                # --check: one read of each source, in text
     ping_host "$h" > "$TMPD/p" 2>&1
     ping_parse "$TMPD/p"; echo "ping $h: ${P_RTT[*]} ms, jitter $P_JIT ms"
   done
-  if (( SPEED_ON )); then speed_test; echo "download speed: $KBPS kbit/s"; fi
+  if (( SPEED_ON )); then speed_test; echo "download speed: $DL_KBPS kbit/s"; fi
   echo "Background process, 2 rounds of $CHECK_S s:"
   ( checker 2 ) < /dev/null > /dev/null 2>&1 &
   wait $!
@@ -1061,7 +1061,7 @@ results() { # read the result files twice a second and take in what is new
   done
 }
 
-speed() { # speed KBIT/S -> $SPEED, at most 4 characters ("940k", "8.2M")
+fmt_speed() { # fmt_speed KBIT/S -> $SPEED, at most 4 characters ("940k", "8.2M")
   local k=$1
   if (( k < 0 )); then SPEED="--"
   elif (( k < 1000 )); then SPEED="${k}k"
@@ -1073,7 +1073,7 @@ speed() { # speed KBIT/S -> $SPEED, at most 4 characters ("940k", "8.2M")
 
 # --- Panel meters: build $CELL, TW columns wide, for link $1 in state $2 ---
 TW=12
-traffic() { # Braille throughput meter flowing left to right, as high as
+traffic_meter() { # Braille throughput meter flowing left to right, as high as
   local j=$1 s=$2 x ph v L=${TLV[$1]}  # the measured traffic level L
   CELL=""
   if (( s == 2 )); then
@@ -1096,7 +1096,7 @@ traffic() { # Braille throughput meter flowing left to right, as high as
     CELL+="${RAMP[s*9+3+v]}${BRAILLE[v]}"
   done
 }
-ping() { # latency sparkline of the last TW samples, newest on the right
+ping_meter() { # latency sparkline of the last TW samples, newest on the right
   local j=$1 s=$2 x v r b w=${LAT_WARN[$1]} c=${LAT_CRIT[$1]}
   CELL=""
   if (( s == 2 )); then
@@ -1228,7 +1228,7 @@ while :; do
     for k in "${GLOBE_CELLS[@]}"; do setc $k "${GCH[k]}" "$gc"; done
     for k in "${INET_CELLS[@]}"; do setc $k "${GCH[k]}" "$tc"; done
   fi
-  screen
+  draw_screen
   # gateway lights: a soft yellow flicker while it answers, red when it is down
   s=${STATE[1]}; (( s == 3 )) && s=1
   key="$SEQ $s $(( T / 250 )) $(( T / 400 % 2 ))"
@@ -1395,10 +1395,10 @@ while :; do
 
   # the traffic box rows: the meter, then the speed, in the internet's colour
   vs=${STATE[0]}; (( vs == 3 )) && vs=1
-  TW=14; traffic 0 $vs; TW=12
+  TW=14; traffic_meter 0 $vs; TW=12
   TBOX=("${BOX_COLOR}│ ${CELL}${BOX_COLOR} │")
   if (( KBPS[0] < 0 )); then spin 3; v="${SPIN_COLOR}${SP}"; k=1
-  else speed ${KBPS[0]}; v="${RAMP[vs*9+7]}${SPEED}b/s"; k=$(( ${#SPEED} + 3 ))
+  else fmt_speed ${KBPS[0]}; v="${RAMP[vs*9+7]}${SPEED}b/s"; k=$(( ${#SPEED} + 3 ))
   fi
   printf -v p '%*s' $(( 9 - k )) ''
   TBOX+=("${BOX_COLOR}│ ${LABEL_COLOR}speed${p}${v}${BOX_COLOR} │")
@@ -1433,7 +1433,7 @@ while :; do
       printf -v info ' %3s%%' "${LOSS[j]}"
       info="${RAMP[lc]}${lat}${RAMP[vs*9+7]}${jit}${info}"
     fi
-    TW=13; ping $j $vs; TW=12         # odd width: the ✕ of a cut link centred
+    TW=13; ping_meter $j $vs; TW=12         # odd width: the ✕ of a cut link centred
     PANEL+=("${SP2}${TBOX[1-j]} ${LABEL_COLOR}⇄ ${NAME_COLOR}${name} ${RAMP[vs*9+7]}${BOLD}${st} ${CELL} ${info}${RESET}${ESC}[K")
   done
 
