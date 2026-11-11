@@ -603,9 +603,22 @@ level() { # level BIT/S MBPS -> $L, traffic level 0-4 of a meter (-1 unknown)
   else L=4
   fi
 }
+# Text from outside (the Wi-Fi name, chosen by whoever runs the access point;
+# what the web answers) is cleaned before it is written to a results file:
+# a control character such as ESC would reach the terminal as an escape.
+printable() { # printable STRING -> $PR: no control characters, no "|"
+  PR=${1//[[:cntrl:]]/}; PR=${PR//|//}
+}
+fit_name() { # fit_name NAME -> $FIT: "NAME|PAD", the name cleaned and cut to
+  # 18 characters, PAD the spaces that fill it to 18 (characters, not bytes,
+  # are counted in a UTF-8 locale)
+  FIT=$(LC_ALL=$UTF8 "$BASH" -c 's=${1//[[:cntrl:]]/}; s=${s//|//}; s=${s:0:18}
+    printf "%s|%d" "$s" $(( 18 - ${#s} ))' _ "$1")
+}
 ascii() { # ascii STRING -> $A, accents dropped ("Córdoba" -> "Cordoba")
-  A=$(printf '%s' "$1" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null | tr -d "'\`^~\"")
-  A=${A//|//}
+  A=$(printf '%s' "$1" | LC_ALL=$UTF8 iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null |
+    tr -d "'\`^~\"")
+  printable "$A"; A=$PR
 }
 wifi_poll() { # -> $WIFI: "state|name|pad|security|level|band|channel|signal|
   local line cur=0 sec="" seclv=0 band="" ch="" sig="" noise="" rate="" phy=""
@@ -650,9 +663,8 @@ wifi_poll() { # -> $WIFI: "state|name|pad|security|level|band|channel|signal|
         sec=${sec// Transition/}
         [[ $sec == WPA || $sec == WPA-Ent || $sec == WPA/WPA2 ]] && seclv=1 ;;
   esac
-  # the name cut to 18 characters, and the spaces that pad it to 18
-  ssid=${ssid//|//}
-  ssid=$(LC_ALL=$UTF8 bash -c 's=$1; printf "%s|%d" "${s:0:18}" $(( 18 - ${#s} < 0 ? 0 : 18 - ${#s} ))' _ "$ssid")
+  fit_name "$ssid"; ssid=$FIT
+  printable "$sec"; sec=$PR; printable "$rate"; rate=$PR; printable "$phy"; phy=$PR
   WIFI="$st|$ssid|$sec|$seclv|$band|$ch|$sig|$noise|$rate|$phy"
 }
 wifi_poll_win() { # wifi_poll from "netsh wlan show interfaces" (Spanish or English)
@@ -668,8 +680,9 @@ wifi_poll_win() { # wifi_poll from "netsh wlan show interfaces" (Spanish or Engl
       Estado|State)        [[ $v == conectado || $v == connected ]] && st=0 ;;
       SSID)                ssid=$v ;;
       Autentica*|Authentication) sec=$v ;;
-      Banda|Band)          band=${v%% *}; band=${band/,/.} ;;
-      Canal|Channel)       ch=$v ;;
+      Banda|Band)          band=${v%% *}; band=${band/,/.}
+                           [[ $band =~ ^[0-9.]+$ ]] || band="" ;;
+      Canal|Channel)       [[ $v =~ ^[0-9]+$ ]] && ch=$v ;;
       Se*al|Signal)        v=${v%'%'}; [[ $v =~ ^[0-9]+$ ]] && sig=$(( v / 2 - 100 )) ;;
       "Velocidad de transmisi"*|"Transmit rate"*) rate=${v%%[.,]*} ;;
       "Tipo de radio"|"Radio type") phy=$v ;;
@@ -683,9 +696,8 @@ wifi_poll_win() { # wifi_poll from "netsh wlan show interfaces" (Spanish or Engl
     *)  sec=${sec//-Personal/}; sec=${sec//-Enterprise/-Ent}; sec=${sec//-Empresa/-Ent}
         [[ $sec == WPA || $sec == WPA-Ent ]] && seclv=1 ;;
   esac
-  # the name cut to 18 characters, and the spaces that pad it to 18
-  ssid=${ssid//|//}
-  ssid=$(LC_ALL=$UTF8 bash -c 's=$1; printf "%s|%d" "${s:0:18}" $(( 18 - ${#s} < 0 ? 0 : 18 - ${#s} ))' _ "$ssid")
+  fit_name "$ssid"; ssid=$FIT
+  printable "$sec"; sec=$PR; printable "$rate"; rate=$PR; printable "$phy"; phy=$PR
   WIFI="0|$ssid|$sec|$seclv|$band|$ch|$sig||$rate|$phy"
 }
 round_sleep() { # round_sleep PERIOD START: sleep what is left of a round
@@ -827,6 +839,7 @@ checker() { # the background loop
     (( seq++ )); lip=""
     if (( WIN )); then lip=$IF_IP
     elif [[ -n $GW_IF ]]; then lip=$(ipconfig getifaddr "$GW_IF" 2>/dev/null); fi
+    [[ $lip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || lip=""
     out="$seq ${GW:--} 0 ${lip:--}"; wifi=1
     [[ -n $GW_IF && $GW_IF != "$WIFI_IF" ]] && { out="$seq $GW 1 ${lip:--}"; wifi=0; }  # 1: by cable
     if (( wifi )); then need=$WIFI_SLOW_ROUNDS; lw=$WIFI_LOSS_WARN; else need=1; lw=$LOSS_WARN; fi
