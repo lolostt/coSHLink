@@ -421,6 +421,8 @@ clock_tick() {
 }
 
 rnd() { # rnd N -> $H, a pseudo-random 0-255 stable for each N
+  # (copied inline in draw_screen, traffic_meter and the gateway lights,
+  # which run many times a frame: keep the copies the same as this one)
   H=$(( ((($1 * 2654435761) ^ ($1 * 40503 >> 3)) >> 11) & 255 ))
 }
 
@@ -892,7 +894,7 @@ wifi_checker() { # its own background loop, writing "round|$WIFI" to $RES.wifi
   while kill -0 "$MAIN_PID" 2>/dev/null; do
     t0=$SECONDS
     wifi_poll; (( seq++ ))
-    printf '%s\n' "$seq|$WIFI" > "$RES.wifi.tmp" && mv -f "$RES.wifi.tmp" "$RES.wifi"
+    write_file "$RES.wifi" "$seq|$WIFI"
     round_sleep $WIFI_S $t0
   done
 }
@@ -930,7 +932,7 @@ dns_checker() { # its own background loop, writing "round state server" to
       fi
     fi
     (( seq++ ))
-    printf '%s\n' "$seq $st $DNS_SRV" > "$RES.dns.tmp" && mv -f "$RES.dns.tmp" "$RES.dns"
+    write_file "$RES.dns" "$seq $st $DNS_SRV"
     round_sleep $CHECK_S $t0
   done
 }
@@ -1011,11 +1013,11 @@ speed_checker() { # its own background loop, writing "round kbit/s" to
   bg_init                        # $TMPD/busy exists while it downloads
   nap 3                          # after the first pings
   while kill -0 "$MAIN_PID" 2>/dev/null; do
-    printf '%s\n' "$seq 0" > "$RES.speed.tmp" && mv -f "$RES.speed.tmp" "$RES.speed"
+    write_file "$RES.speed" "$seq 0"
     : > "$TMPD/busy"
     speed_test; (( seq++ ))
     rm -f "$TMPD/busy"
-    printf '%s\n' "$seq $DL_KBPS" > "$RES.speed.tmp" && mv -f "$RES.speed.tmp" "$RES.speed"
+    write_file "$RES.speed" "$seq $DL_KBPS"
     nap $SPEED_S
   done
 }
@@ -1097,7 +1099,7 @@ checker() { # the background loop
       traffic_level $RATE ${LINK_MBPS[j]}
       out+=" $st $lat $loss $P_JIT $L $(( RATE < 0 ? -1 : RATE / 1000 )) ${P_RTT[*]}"
     done
-    printf '%s\n' "$out" > "$RES.tmp" && mv -f "$RES.tmp" "$RES"
+    write_file "$RES" "$out"
     round_sleep $CHECK_S $t0
   done
 }
@@ -1405,7 +1407,7 @@ render_map() { # the wires, the globe, the computer screen and the gateway light
       fi
     done
     if (( WIN )); then               # the tower's power light flickers the same way
-      H=$(( T / 250 + 3 * 13 )); H=$(( (((H * 2654435761) ^ (H * 40503 >> 3)) >> 11) & 255 ))
+      rnd $(( T / 250 + 3 * 13 ))
       put $(( MAC_R + 3 )) $(( MAC_C - 2 )) "▪" "${LED_RED[H%5]}"
     fi
   fi
