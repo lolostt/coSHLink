@@ -53,7 +53,12 @@ YEAR=2026                          # bottom right, in soft grey:
 BUILD="build 2"                    # "MAKER · YEAR · BUILD" (ASCII)
 MAKER="www.sleepingcoconut.com"
 LOCAL=MACBOOK                      # this computer (ASCII, up to 15 letters)
-WIN=0; [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]] && WIN=1  # Git Bash
+case $OSTYPE in                    # mac, win (Git Bash) or linux (any other)
+  darwin*)       OS=mac ;;
+  msys*|cygwin*) OS=win ;;
+  *)             OS=linux ;;
+esac
+WIN=0; [[ $OS == win ]] && WIN=1
 (( WIN )) && LOCAL=PC
 NL=2                               # links: 0 internet, 1 Wi-Fi gateway
 LINK_NAMES=(INTERNET GATEWAY)      # as in the panel (ASCII, up to 9)
@@ -494,9 +499,13 @@ fi
 UTF8=en_US.UTF-8                   # locale for counting the characters of names
 [[ ${LC_ALL:-${LC_CTYPE:-$LANG}} == *[Uu][Tt][Ff]*8* ]] && UTF8=${LC_ALL:-${LC_CTYPE:-$LANG}}
 
-ping_host() { # ping_host HOST: PINGS pings
-  if (( WIN )); then command ping -n $PINGS -w 1000 "$1"  # Windows ping
-  else command ping -c $PINGS -W 1000 "$1"; fi
+ping_host() { # ping_host HOST: PINGS pings, 1 s for each reply, the whole
+  case $OS in   # round within PINGS + 1 s (the reply wait is in ms on macOS
+                # and Windows, in seconds on Linux)
+    win)   command ping -n $PINGS -w 1000 "$1" ;;
+    mac)   command ping -c $PINGS -W 1000 -t $(( PINGS + 1 )) "$1" ;;
+    linux) command ping -c $PINGS -W 1 -w $(( PINGS + 1 )) "$1" ;;
+  esac
 }
 ping_parse() { # ping_parse FILE -> $P_RTT (PINGS ms, -1 lost), $P_OK, $P_SUM, $P_JIT
   local line n=0 prev=-1 d re='[=<]([0-9]+)([.,][0-9]+)? ?m'
