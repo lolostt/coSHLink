@@ -25,6 +25,7 @@
 #
 # Usage:
 #   coSHLink.sh [--loop] [--speed] [--check] [--log FILE] [--256 | --truecolor]
+#   coSHLink.sh --install | --uninstall
 #     --loop       run until Ctrl+C (otherwise RUN_S seconds)
 #     --speed      measure the download speed every SPEED_S seconds; each
 #                  test downloads SPEED_MB MB
@@ -32,7 +33,16 @@
 #     --log FILE   append the errors of the background measures to FILE
 #     --256        force 256 colours
 #     --truecolor  force 24-bit colour
+#     --install    install it for this user as the command "coshlink"
+#     --uninstall  remove what --install added
 #     -h, --help   show the options
+#
+#   --install copies the script to ~/.local/bin/coshlink (INSTALL_DIR) and,
+#   if that folder is not in the PATH, adds it in ~/.zshrc, ~/.bash_profile
+#   or ~/.bashrc, after the login shell. On Windows it also writes
+#   coshlink.cmd to %LOCALAPPDATA%\Microsoft\WindowsApps, so that
+#   "coshlink" works from PowerShell and cmd too. No administrator rights
+#   are needed. Run --install again to update the installed copy.
 #
 #   macOS 15 and later hide the Wi-Fi name from scripts. To show it to every
 #   program, across reboots:
@@ -99,14 +109,20 @@ SPEED_MB=25
 SPEED_MAX_S=15
 SPEED_S=600
 
+# Where --install puts the script, and the name of the command
+INSTALL_DIR=$HOME/.local/bin
+INSTALL_NAME=coshlink
+
 #
 # ============================================================================
 # Helper functions
 # ============================================================================
 #
 
-# Read the command-line options into LOOP, CHECK, SPEED_ON, COLOR_MODE and LOG.
+# Read the command-line options into LOOP, CHECK, SPEED_ON, COLOR_MODE, LOG
+# and ACTION.
 parse_args() {
+  ACTION=""
   LOOP=0
   CHECK=0
   SPEED_ON=0
@@ -121,6 +137,8 @@ parse_args() {
                    LOG=$2; shift ;;
       --256)       COLOR_MODE=256 ;;
       --truecolor) COLOR_MODE=24 ;;
+      --install)   ACTION=install ;;
+      --uninstall) ACTION=uninstall ;;
       -h|--help)   echo "$USAGE"; exit 0 ;;
       *) echo "${0##*/}: unknown option '$1'" >&2
          echo "$USAGE" >&2
@@ -128,12 +146,89 @@ parse_args() {
     esac
     shift
   done
-  if (( ! CHECK )) && [[ ! -t 1 ]]; then
+  if (( ! CHECK )) && [[ -z $ACTION && ! -t 1 ]]; then
     echo "${0##*/}: the output is not a terminal (try --check)" >&2; exit 2
   fi
   if [[ $LOG != /dev/null ]]; then
     { : >> "$LOG"; } 2>/dev/null || { echo "${0##*/}: cannot write to $LOG" >&2; exit 2; }
   fi
+}
+
+# Set RC to the startup file of the user's login shell ("" if unknown).
+shell_rc() {
+  case ${SHELL##*/} in
+    zsh)  RC=$HOME/.zshrc ;;
+    bash) if [[ $OS == mac ]]; then RC=$HOME/.bash_profile; else RC=$HOME/.bashrc; fi ;;
+    *)    RC="" ;;
+  esac
+  [[ $OS == win ]] && RC=$HOME/.bashrc
+}
+
+# Set CMD_FILE to the Windows command that runs the installed copy ("" if
+# there is no WindowsApps folder).
+win_cmd_file() {
+  CMD_FILE=""
+  [[ -n $LOCALAPPDATA ]] || return
+  CMD_FILE="$(cygpath -u "$LOCALAPPDATA")/Microsoft/WindowsApps/$INSTALL_NAME.cmd"
+  [[ -d ${CMD_FILE%/*} ]] || CMD_FILE=""
+}
+
+# --install: copy the script to INSTALL_DIR as INSTALL_NAME, put that folder
+# in the PATH if needed and, on Windows, add a .cmd for PowerShell and cmd.
+install_app() {
+  local dest=$INSTALL_DIR/$INSTALL_NAME src=${BASH_SOURCE[0]}
+  mkdir -p "$INSTALL_DIR" || { echo "${0##*/}: cannot create $INSTALL_DIR" >&2; exit 1; }
+  if [[ ! $src -ef $dest ]]; then
+    cp -f "$src" "$dest.tmp" && chmod 755 "$dest.tmp" && mv -f "$dest.tmp" "$dest" ||
+      { rm -f "$dest.tmp"; echo "${0##*/}: cannot write $dest" >&2; exit 1; }
+  fi
+  echo "Installed $dest"
+  case ":$PATH:" in
+    *":$INSTALL_DIR:"*) ;;
+    *)
+      shell_rc
+      if [[ -z $RC ]]; then
+        echo "Add $INSTALL_DIR to your PATH to run it as $INSTALL_NAME."
+      elif ! grep -qF "$PATH_MARK" "$RC" 2>/dev/null; then
+        printf '\nexport PATH="%s:$PATH"  %s\n' "${INSTALL_DIR/#$HOME/\$HOME}" "$PATH_MARK" >> "$RC" ||
+          { echo "${0##*/}: cannot write $RC" >&2; exit 1; }
+        echo "Added $INSTALL_DIR to the PATH in $RC"
+      fi ;;
+  esac
+  if [[ $OS == win ]]; then
+    win_cmd_file
+    if [[ -n $CMD_FILE ]]; then
+      printf '@echo off\r\nrem %s\r\nset CHERE_INVOKING=1\r\n"%s" -l "%s" %%*\r\n' \
+        "$CMD_MARK" "$(cygpath -w /)\bin\bash.exe" "$(cygpath -w "$dest")" > "$CMD_FILE" ||
+        { echo "${0##*/}: cannot write $CMD_FILE" >&2; exit 1; }
+      echo "Installed $CMD_FILE"
+    fi
+  fi
+  echo "Open a new terminal and run: $INSTALL_NAME --loop"
+}
+
+# --uninstall: remove the installed copy, the PATH line and the .cmd, only
+# if --install wrote them.
+uninstall_app() {
+  local dest=$INSTALL_DIR/$INSTALL_NAME f tmp
+  if [[ -f $dest ]] && grep -q '^# coSHLink$' "$dest" 2>/dev/null; then
+    rm -f "$dest" && echo "Removed $dest"
+  fi
+  for f in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bashrc"; do
+    grep -qF "$PATH_MARK" "$f" 2>/dev/null || continue
+    tmp=$(grep -vF "$PATH_MARK" "$f")
+    if [[ -z ${tmp//[[:space:]]/} ]]; then rm -f "$f"   # --install created it
+    else printf '%s\n' "$tmp" > "$f"
+    fi && echo "Removed the PATH line from $f"
+  done
+  if [[ $OS == win ]]; then
+    win_cmd_file
+    if [[ -n $CMD_FILE ]] && grep -qF "$CMD_MARK" "$CMD_FILE" 2>/dev/null; then
+      rm -f "$CMD_FILE" && echo "Removed $CMD_FILE"
+    fi
+  fi
+  rmdir "$INSTALL_DIR" "${INSTALL_DIR%/*}" 2>/dev/null   # only if empty
+  echo "coSHLink is uninstalled."
 }
 
 # Map a colour level 0-255 to an index 0-5 of the 256-colour cube, in CUBE.
@@ -1643,11 +1738,13 @@ USAGE="Usage: ${0##*/} [--loop] [--speed] [--check] [--log FILE] [--256 | --true
                (they are discarded otherwise)
   --256        force 256 colors
   --truecolor  force 24-bit color
+  --install    install it for this user as the command \"coshlink\"
+  --uninstall  remove what --install added
   -h, --help   show this help"
 
 # When sourced (". coSHLink.sh"), the script only defines its functions and
 # settings; the options are read and the animation starts only when run.
-LOOP=0; CHECK=0; SPEED_ON=0; COLOR_MODE=auto; LOG=/dev/null
+LOOP=0; CHECK=0; SPEED_ON=0; COLOR_MODE=auto; LOG=/dev/null; ACTION=""
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then parse_args "$@"; fi
 
 case $OSTYPE in
@@ -1657,6 +1754,11 @@ case $OSTYPE in
 esac
 WIN=0; [[ $OS == win ]] && WIN=1
 NL=2                                 # links: 0 internet, 1 gateway
+
+# Marks of what --install writes, so --uninstall removes only that
+PATH_MARK="# added by coSHLink --install"
+CMD_MARK="coSHLink, added by coSHLink.sh --install"
+if [[ -n $ACTION ]]; then ${ACTION}_app; exit 0; fi
 
 ESC=$'\e'
 RESET="${ESC}[0m"
