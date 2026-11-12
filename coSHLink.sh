@@ -1560,17 +1560,31 @@ spin() {
   SP=${SPIN[$(( (T / SPIN_MS + $1) % ${#SPIN[@]} ))]}
 }
 
-# Set BUILD_LINE to the footer: "ⓘ Update available" on the left when
-# OWN_BUILD is older than UPD, and "MAKER · YEAR · BUILD" on the right. Both
-# are links (OSC 8) where the terminal supports them, plain text otherwise.
+# Set BUILD_LINE to the footer: "ⓘ Update available" on the left, at
+# brightness UPD_LV, when OWN_BUILD is older than UPD (then UPD_ON=1), and
+# "MAKER · YEAR · BUILD" on the right. Both are links (OSC 8) where the
+# terminal supports them, plain text otherwise.
 build_footer() {
   local left="" w=0
+  UPD_ON=0
   if [[ $OWN_BUILD =~ ^[0-9]+$ && $UPD =~ ^[0-9]+$ ]] && (( UPD > OWN_BUILD )); then
-    left="${SP2}${UPDATE_COLOR}${ESC}]8;;${UPDATE_INFO}${ESC}\\ⓘ Update available${ESC}]8;;${ESC}\\${BUILD_COLOR}"
-    w=20
+    left="${SP2}${UPD_RAMP[UPD_LV]}${ESC}]8;;${UPDATE_INFO}${ESC}\\ⓘ Update available${ESC}]8;;${ESC}\\${BUILD_COLOR}"
+    w=20; UPD_ON=1
   fi
   printf -v BUILD_LINE '%*s' $(( COLS - 4 - ${#YEAR} - ${#BUILD} - ${#MAKER} - w )) ''
   BUILD_LINE="${left}${BUILD_LINE}${ESC}]8;;${MAKER_URL}${ESC}\\${MAKER}${ESC}]8;;${ESC}\\ · $YEAR · $BUILD"
+}
+
+# While "Update available" is shown, set its brightness from the time and
+# rebuild the footer when it changes.
+update_pulse() {
+  local p lv
+  (( UPD_ON )) || return
+  p=$(( T % UPD_PULSE_MS * 2 ))
+  (( p > UPD_PULSE_MS )) && p=$(( 2 * UPD_PULSE_MS - p ))
+  lv=$(( p * 6 / (UPD_PULSE_MS + 1) ))
+  (( lv == UPD_LV )) && return
+  UPD_LV=$lv; build_footer
 }
 
 # to_line LINE: add to out the cursor move from line CUR to LINE.
@@ -1946,6 +1960,7 @@ main_loop() {
     render_info
     render_wifi_box
     render_panel
+    update_pulse
     flush_frame
     pause
   done
@@ -2048,7 +2063,14 @@ rgb 120 124 135; BOX_COLOR="${ESC}[0;${FG}m"
 rgb 235 238 245; NAME_COLOR="${ESC}[0;1;${FG}m"
 rgb 140 140 150; LABEL_COLOR="${ESC}[0;${FG}m"
 rgb 85 88 98; BUILD_COLOR="${ESC}[0;${FG}m"
-rgb 80 160 255; UPDATE_COLOR="${ESC}[0;${FG}m"
+# "Update available": amber, its brightness going slowly up and down
+UPD_RAMP=()
+for (( l = 0; l < 6; l++ )); do
+  rgb $(( 255 * (14 + l) / 19 )) $(( 180 * (14 + l) / 19 )) $(( 40 * (14 + l) / 19 ))
+  UPD_RAMP+=("${ESC}[0;${FG}m")
+done
+UPD_LV=5
+UPD_PULSE_MS=2000                    # one slow cycle, dim to bright and back
 rgb 60 62 70; DIM_COLOR="${ESC}[0;${FG}m"
 # Computer screen: faint lines of text, the one being typed a little
 # brighter, and the cursor
