@@ -16,13 +16,15 @@
 # possible carrier-grade NAT and, with -s, the download speed.
 #
 # The measurements run in background processes that write their results to
-# a private temporary directory, removed on exit; the display reads those
-# files and never waits on the network. The terminal must be at least 80x24.
+# a private temporary directory (in memory on Linux), removed on exit; the
+# display reads those files and never waits on the network. The terminal
+# must be at least 80x24.
 #
 # Requirements:
 #   macOS: nothing to install.
 #   Windows: Git Bash (Git for Windows).
-#   Linux: bash, iproute2, ping, curl, nslookup, iconv and traceroute. The
+#   Linux: bash, iproute2, ping, curl, nslookup, iconv and traceroute. If
+#   any is missing, coSHLink names the packages to install and exits. The
 #   Wi-Fi details are not shown.
 #   Run with -c to list the tools that are missing.
 #
@@ -569,8 +571,11 @@ draw_screen() {
 
 # Create the private directory of the results files (only this user can
 # open it; there is no fixed-name fallback another user could create first).
+# On Linux it goes in /dev/shm, in memory, unless TMPDIR says otherwise.
 make_tmp() {
-  TMPD=$(mktemp -d "${TMPDIR:-/tmp}/coSHLink.XXXXXX" 2>/dev/null) || {
+  local base=${TMPDIR:-/tmp}
+  [[ $OS == linux && -z $TMPDIR && -d /dev/shm && -w /dev/shm ]] && base=/dev/shm
+  TMPD=$(mktemp -d "$base/coSHLink.XXXXXX" 2>/dev/null) || {
     TMPD=""; echo "${0##*/}: cannot create a temporary directory" >&2; exit 1; }
   RES=$TMPD/results
   : > "$RES"; : > "$RES.dns"; : > "$RES.ip"; : > "$RES.wifi"; : > "$RES.speed"
@@ -1228,18 +1233,63 @@ checker() {
   done
 }
 
+# Set NEEDED to the tools this system needs and MISSING to those not found.
+find_tools() {
+  local t
+  NEEDED="ping curl nslookup iconv"; MISSING=""
+  case $OS in
+    mac)   NEEDED+=" netstat ipconfig networksetup system_profiler traceroute" ;;
+    linux) NEEDED+=" ip traceroute" ;;
+    win)   NEEDED+=" netsh ipconfig tracert" ;;
+  esac
+  [[ -z $EPOCHREALTIME ]] && NEEDED+=" perl"
+  for t in $NEEDED; do command -v "$t" > /dev/null 2>&1 || MISSING+=" $t"; done
+  MISSING=${MISSING# }
+}
+
 # Print the tools this system needs and those that are missing.
 needs() {
-  local t miss="" all="ping curl nslookup iconv"
-  case $OS in
-    mac)   all+=" netstat ipconfig networksetup system_profiler traceroute" ;;
-    linux) all+=" ip traceroute" ;;
-    win)   all+=" netsh ipconfig tracert" ;;
+  find_tools
+  echo "tools needed: $NEEDED"
+  echo "missing: ${MISSING:-none}"
+}
+
+# On Linux, stop before starting if a tool is missing, and say which
+# packages provide them for the package manager found.
+require_tools() {
+  local t pkgs="" pm=""
+  [[ $OS == linux ]] || return 0
+  find_tools
+  [[ -n $MISSING ]] || return 0
+  for pm in apt-get dnf yum zypper pacman apk ""; do
+    [[ -n $pm ]] && command -v $pm > /dev/null 2>&1 && break
+  done
+  for t in $MISSING; do
+    case $pm:$t in
+      *:ping)                 pkgs+=" iputils-ping" ;;
+      apt-get:nslookup)       pkgs+=" dnsutils" ;;
+      dnf:nslookup|yum:nslookup|zypper:nslookup) pkgs+=" bind-utils" ;;
+      pacman:nslookup)        pkgs+=" bind" ;;
+      apk:nslookup)           pkgs+=" bind-tools" ;;
+      apt-get:ip|pacman:ip|apk:ip) pkgs+=" iproute2" ;;
+      *:ip)                   pkgs+=" iproute" ;;
+      apt-get:iconv)          pkgs+=" libc-bin" ;;
+      dnf:iconv|yum:iconv)    pkgs+=" glibc-common" ;;
+      *:iconv)                pkgs+=" glibc" ;;
+      *)                      pkgs+=" $t" ;;
+    esac
+  done
+  case $pm in dnf|yum|zypper|pacman) pkgs=${pkgs/iputils-ping/iputils} ;; esac
+  echo "${0##*/}: missing tools: $MISSING"
+  case $pm in
+    apt-get) echo "Install them with: sudo apt-get install$pkgs" ;;
+    dnf|yum) echo "Install them with: sudo $pm install$pkgs" ;;
+    zypper)  echo "Install them with: sudo zypper install$pkgs" ;;
+    pacman)  echo "Install them with: sudo pacman -S$pkgs" ;;
+    apk)     echo "Install them with: sudo apk add$pkgs" ;;
+    *)       echo "Install the packages that provide them:$pkgs" ;;
   esac
-  [[ -z $EPOCHREALTIME ]] && all+=" perl"
-  for t in $all; do command -v "$t" > /dev/null 2>&1 || miss+=" $t"; done
-  echo "tools needed: $all"
-  echo "missing:${miss:- none}"
+  exit 1
 }
 
 # --check: read every source once, print it as text and exit.
@@ -2083,6 +2133,7 @@ KEYS=0; [[ -t 0 ]] && KEYS=1          # q quits only when typed in a terminal
 
 [[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
 
+(( CHECK )) || require_tools
 setup_term
 make_tmp
 start_clock
