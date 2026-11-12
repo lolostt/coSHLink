@@ -4,7 +4,7 @@ A live map of the network path from your computer to the internet, drawn in
 an 80x24 terminal.
 
 <p align="center">
-  <img src="DEMO_IMAGE_URL" alt="coSHLink running with sample data" width="800">
+  <img src="https://github.com/user-attachments/assets/ceb8d2d5-6fa1-4b0f-95f9-9e23c96d77de" alt="coSHLink running with sample data" width="800">
 </p>
 
 coSHLink draws your computer, the gateway and the internet as a diagram. Each
@@ -113,7 +113,7 @@ with the latest version.
 Short options can be combined: `-ls` is `-l -s`. Thresholds, ping targets and
 intervals live in the *User configuration* section at the top of the script.
 
-With `-s`, a speed test runs every 15 seconds and downloads up to 25 MB each
+With `-s`, a speed test runs every 30 seconds and downloads up to 20 MB each
 time. Avoid it on a metered connection.
 
 ## Wi-Fi name on macOS
@@ -183,6 +183,6 @@ MIT. See [LICENSE](LICENSE).
 ---
 
 <p align="center">
-  <a href="https://github.com/lolostt/coSHLink"><img src="AUTHOR_IMAGE_URL" alt="Sleeping Coconut" width="20" height="20" align="absmiddle"></a>
+  <a href="https://github.com/lolostt/coSHLink"><img src="https://github.com/user-attachments/assets/85619289-29ae-406d-badb-23e38b30bebe" alt="Sleeping Coconut" width="20" height="20" align="absmiddle"></a>
   · <a href="https://sleepingcoconut.com">www.sleepingcoconut.com</a> · 2026
 </p>
