@@ -126,6 +126,7 @@ SPEED_S=600
 APP=coSHLink
 # Footer, bottom right: "MAKER · YEAR · BUILD" (ASCII)
 MAKER="www.sleepingcoconut.com"
+MAKER_URL=https://sleepingcoconut.com    # opened by clicking MAKER
 YEAR=2026
 BUILD="build 3"
 
@@ -2063,7 +2064,9 @@ WBOX_BOT+="┘"
 # Screen lines: a blank one on top, the map, a blank one, the panel header
 # and rows, and the footer
 LINES_N=$(( ROWS + 5 + NL ))
-printf -v BUILD_LINE "%*s · %s · %s" $(( COLS - 4 - ${#YEAR} - ${#BUILD} )) "$MAKER" "$YEAR" "$BUILD"
+# MAKER is a link (OSC 8) where the terminal supports it, plain text otherwise
+printf -v BUILD_LINE '%*s' $(( COLS - 4 - ${#YEAR} - ${#BUILD} - ${#MAKER} )) ''
+BUILD_LINE+="${ESC}]8;;${MAKER_URL}${ESC}\\${MAKER}${ESC}]8;;${ESC}\\ · $YEAR · $BUILD"
 # Traffic box, left of the panel rows, from the header line to the blank
 # line under the rows. Both links read the same counters.
 TBOX_TOP="┌─ ${NAME_COLOR}TRAFFIC${BOX_COLOR} ──────┐"
