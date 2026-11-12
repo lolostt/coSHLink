@@ -147,8 +147,9 @@ If you run the script or a launcher from a folder, delete the files.
 | `-v`  | `--version`   | Print the version.                                              |
 | `-h`  | `--help`      | Print the help.                                                 |
 
-Short options can be combined: `-ls` is `-l -s`. Thresholds, ping targets and
-intervals live in the *User configuration* section at the top of the script.
+Short options can be combined: `-ls` is `-l -s`. Thresholds, ping targets,
+intervals and the drawing of your computer (`COMPUTER`: a laptop or a tower)
+live in the *User configuration* section at the top of the script.
 
 With `-s`, a speed test runs every 30 seconds and downloads up to 20 MB each
 time. Avoid it on a metered connection.

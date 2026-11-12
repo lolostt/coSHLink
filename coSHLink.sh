@@ -75,6 +75,9 @@
 
 # Label under the computer drawing (ASCII, up to 15 characters)
 LOCAL="THIS COMPUTER"
+# Drawing of this computer: laptop, tower, or auto (a laptop on macOS, a
+# tower on Windows and Linux)
+COMPUTER=auto
 # Link names in the panel, internet first (ASCII, up to 9 characters)
 LINK_NAMES=(INTERNET GATEWAY)
 
@@ -1585,9 +1588,9 @@ render_map() {
         put $(( AP_R + 3 )) $c "▪" "${LED_YEL[H%5]}"
       fi
     done
-    if (( WIN )); then               # the tower's power light
+    if (( IS_TOWER )); then          # the tower's power light
       rnd $(( T / 250 + 3 * 13 ))
-      put $(( MAC_R + 3 )) $(( MAC_C - 2 )) "▪" "${LED_RED[H%5]}"
+      put $(( PC_R + 3 )) $(( PC_C - 2 )) "▪" "${LED_RED[H%5]}"
     fi
   fi
 }
@@ -1604,8 +1607,8 @@ render_info() {
     # gateway and computer addresses, under their drawings
     clear_cells $(( TOP + 6 )) $(( MID_C - 8 )) 17
     [[ -n $GWIP && $GWIP != - ]] && center $(( TOP + 6 )) $(( MID_C - 7 )) 15 "$GWIP" "$LABEL_COLOR"
-    clear_cells $(( TOP + 6 )) $MAC_C 15
-    [[ -n $LIP && $LIP != - ]] && center $(( TOP + 6 )) $MAC_C 15 "$LIP" "$LABEL_COLOR"
+    clear_cells $(( TOP + 6 )) $PC_C 15
+    [[ -n $LIP && $LIP != - ]] && center $(( TOP + 6 )) $PC_C 15 "$LIP" "$LABEL_COLOR"
     # DNS state, under the INTERNET label
     if (( DSEQ == 0 )); then
       spin 5; ic=$SP; co=$SPIN_COLOR; msg="DNS"; mc=$LABEL_COLOR
@@ -1915,7 +1918,11 @@ case $OSTYPE in
   msys*|cygwin*) OS=win ;;           # Git Bash
   *)             OS=linux ;;
 esac
-WIN=0; [[ $OS == win ]] && WIN=1
+case $COMPUTER in
+  laptop) IS_TOWER=0 ;;
+  tower)  IS_TOWER=1 ;;
+  *)      IS_TOWER=1; [[ $OS == mac ]] && IS_TOWER=0 ;;
+esac
 NL=2                                 # links: 0 internet, 1 gateway
 
 # Marks of what --install writes, so --uninstall removes only that
@@ -1958,7 +1965,7 @@ for (( s = 0; s < 3; s++ )); do
 done
 GREEN=0; AMBER=9; RED=18
 # Pilot lights, flickering between brightness 3 and 7: yellow for the
-# gateway, red for the power light of the PC tower
+# gateway, red for the power light of the tower
 LED_YEL=(); LED_RED=()
 for (( l = 3; l < 8; l++ )); do
   rgb $(( 35 + 215 * (l + 1) / 8 )) $(( 35 + 180 * (l + 1) / 8 )) $(( 35 + 5 * (l + 1) / 8 ))
@@ -2006,15 +2013,15 @@ CHG=()                               # cells changed since the last frame
   rgb 110 114 125; C_n="${ESC}[0;${FG}m"
   rgb 80 160 255;  C_o="${ESC}[0;${FG}m"
 }
-MAC=(
+LAPTOP=(
   "..mmmmmmmmmmm|_ _ ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐"
   "..m.........m|_ _ │ _ _ _ _ _ _ _ _ _ │"
   "..m.........m|_ _ │ _ _ _ _ _ _ _ _ _ │"
   "..mmmmmmmmmmm|_ _ └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘"
   "kkkkkkkkkkkkkkk|▝ ▀ ▀ ▀ ▀ ▀ ▀ ▀ ▀ ▀ ▀ ▀ ▀ ▀ ▘"
 )
-# On Windows a desktop, with the tower on the left (MAC_C moves right for it)
-DESK=(
+# A desktop, with the tower on the left (PC_C moves right for it)
+TOWER=(
   "mmmmm.mmmmmmmmmmm|┌ ─ ─ ─ ┐ _ ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┐"
   "mkkkm.m.........m|│ ─ ─ ─ │ _ │ _ _ _ _ _ _ _ _ _ │"
   "mkkkm.m.........m|│ ─ ─ ─ │ _ │ _ _ _ _ _ _ _ _ _ │"
@@ -2038,23 +2045,23 @@ GLOBE=(                              # a circle of 16 x 16 Braille dots
 TOP=8                                # first row of the map drawings
 LINK_R=$(( TOP + 3 ))                # row of the computer wire
 MID_C=38                             # gateway centre column, under the globe
-MAC_C=1                              # computer drawing column (15 wide)
-(( WIN )) && MAC_C=4                 # room for the tower on its left
-MAC_R=$(( TOP + 1 ))                 # computer drawing row (5 tall)
-SCR_C=$(( MAC_C + 3 ))               # first column inside the screen (9 wide)
-SCR_R=$(( MAC_R + 1 ))               # first row inside the screen (2 tall)
+PC_C=1                               # computer drawing column (15 wide)
+(( IS_TOWER )) && PC_C=4             # room for the tower on its left
+PC_R=$(( TOP + 1 ))                  # computer drawing row (5 tall)
+SCR_C=$(( PC_C + 3 ))                # first column inside the screen (9 wide)
+SCR_R=$(( PC_R + 1 ))                # first row inside the screen (2 tall)
 AP_C=$(( MID_C - 4 ))                # gateway drawing column (9 wide)
 AP_R=$(( TOP + 1 ))                  # gateway drawing row (5 tall)
 INFO_C=$(( MID_C + 6 ))              # internet details, right of the globe
-if (( WIN )); then draw $MAC_R $(( MAC_C - 4 )) "${DESK[@]}"
-else draw $MAC_R $MAC_C "${MAC[@]}"
+if (( IS_TOWER )); then draw $PC_R $(( PC_C - 4 )) "${TOWER[@]}"
+else draw $PC_R $PC_C "${LAPTOP[@]}"
 fi
 draw $AP_R $AP_C "${AP[@]}"
 draw 0 $(( MID_C - 4 )) "${GLOBE[@]}"
 text 0 $INFO_C "INTERNET" "$NAME_COLOR"
 put 2 $INFO_C "○" "$LABEL_COLOR"
 text 2 $(( INFO_C + 2 )) "Public IP:" "$LABEL_COLOR"
-center $(( TOP + 7 )) $MAC_C 15 "$LOCAL" "$NAME_COLOR"
+center $(( TOP + 7 )) $PC_C 15 "$LOCAL" "$NAME_COLOR"
 center $(( TOP + 7 )) $AP_C 9 "GATEWAY" "$NAME_COLOR"
 
 # Wires: ordered lists of cells from the computer outwards, each with its
@@ -2071,7 +2078,7 @@ LINK_START[0]=${#P_IDX[@]}; LSLOW[0]=2; LTAIL[0]=3
 for (( r = AP_R + 1; r >= 4; r-- )); do cell $r $MID_C v; done
 # link 1: computer -> gateway, to the right
 LINK_START[1]=${#P_IDX[@]}; LSLOW[1]=1; LTAIL[1]=6
-for (( c = MAC_C + 13; c < AP_C; c++ )); do cell $LINK_R $c h; done
+for (( c = PC_C + 13; c < AP_C; c++ )); do cell $LINK_R $c h; done
 DASH=(0 1)                           # 1 dashed (Wi-Fi), 0 solid (cable)
 LINK_START[NL]=${#P_IDX[@]}
 for (( j = 0; j < NL; j++ )); do
