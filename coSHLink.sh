@@ -82,7 +82,7 @@ if [[ ${BASH_SOURCE[0]} == "$0" ]]; then parse_args "$@"; fi
 
 APP=coSHLink                       # title of the status box (ASCII, up to 11)
 YEAR=2026                          # bottom right, in soft grey:
-BUILD="build 2"                    # "MAKER · YEAR · BUILD" (ASCII)
+BUILD="build 3"                    # "MAKER · YEAR · BUILD" (ASCII)
 MAKER="www.sleepingcoconut.com"
 LOCAL="THIS COMPUTER"              # under its drawing (ASCII, up to 15 letters)
 case $OSTYPE in                    # mac, win (Git Bash) or linux (any other)
