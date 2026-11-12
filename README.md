@@ -48,7 +48,7 @@ Open a new terminal and run it from any folder:
 coshlink -l
 ```
 
-The installer copies the script to `~/.local/bin/coshlink`. If that folder is
+The installer copies the script to `~/.local/bin/coshlink`. If this folder is
 missing from your `PATH`, it adds one marked line to `~/.zshrc`,
 `~/.bash_profile` or `~/.bashrc`, depending on your shell.
 
@@ -72,7 +72,7 @@ coshlink -r
 ### 3. Double-click a launcher
 
 Download the script and the launcher for your system into the same folder,
-then double-click the launcher. It opens an 80x24 window running
+and double-click the launcher. It opens an 80x24 window running
 `coSHLink.sh -l`. If `coSHLink.sh` is already there, the command replaces it
 with the latest version.
 
