@@ -1607,9 +1607,15 @@ render_info() {
         208.67.222.222|208.67.220.220) t="OpenDNS" ;;
         *)                       t=$DNS_SERVER ;;
       esac
-      [[ $t != "$DNS_SERVER" ]] && t+=" $DNS_SERVER"
+      # name and address if both fit up to the map edge, else the address
+      # alone, else the name alone
+      room=$(( 28 - ${#msg} ))
+      if [[ $t != "$DNS_SERVER" ]] && (( ${#t} + 1 + ${#DNS_SERVER} <= room )); then
+        t+=" $DNS_SERVER"
+      elif (( ${#DNS_SERVER} <= room )); then t=$DNS_SERVER
+      fi
       put 1 $(( INFO_C + 3 + ${#msg} )) "·" "$LABEL_COLOR"   # not ASCII: one cell
-      text 1 $(( INFO_C + 5 + ${#msg} )) "${t:0:$(( 26 - ${#msg} ))}" "$LABEL_COLOR"
+      text 1 $(( INFO_C + 5 + ${#msg} )) "${t:0:room}" "$LABEL_COLOR"
     fi
     # public IP, then its place and operator
     clear_cells 2 $(( INFO_C + 13 )) 20
