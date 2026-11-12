@@ -6,43 +6,52 @@
 # Copyright (C) 2026 Sleeping Coconut https://sleepingcoconut.com
 # Licensed under the MIT License.
 #
-# A live map, in an 80x24 terminal, of the way from this computer to the
-# internet on whatever network it has joined. The computer is wired to the
-# gateway and the gateway to the internet; a pulse runs along each wire in
-# the colour of its state, dashed over Wi-Fi and solid over a cable. A panel
-# shows the traffic, latency, jitter and loss of each link. Around the map:
-# the Wi-Fi network, the local and gateway addresses, the DNS, the public IP
-# with its place and operator, a possible CG-NAT and, with --speed, the
-# download speed. Background processes take the measures and write them to
-# files, so the drawing never waits for the network.
+# coSHLink displays a live map of the network path from this computer to the
+# internet. The computer, the gateway and the internet are drawn as a diagram
+# whose links pulse in green, amber or red while they are up, degraded or
+# down; the link to the gateway is dashed over Wi-Fi and solid over a cable.
+# A panel lists the traffic, latency, jitter and loss of each link. Around
+# the map it shows the Wi-Fi network, the local and gateway addresses, the
+# state of the DNS, the public IP address with its location and operator, a
+# possible carrier-grade NAT and, with -s, the download speed.
+#
+# The measurements run in background processes that write their results to
+# a private temporary directory, removed on exit; the display reads those
+# files and never waits on the network. The terminal must be at least 80x24.
 #
 # Requirements:
 #   macOS: nothing to install.
 #   Windows: Git Bash (Git for Windows).
 #   Linux: bash, iproute2, ping, curl, nslookup, iconv and traceroute. The
 #   Wi-Fi details are not shown.
-#   Run with --check to list the tools that are missing.
+#   Run with -c to list the tools that are missing.
 #
 # Usage:
-#   coSHLink.sh [--loop] [--speed] [--check] [--log FILE] [--256 | --truecolor]
-#   coSHLink.sh --install | --uninstall
-#     --loop       run until Ctrl+C (otherwise RUN_S seconds)
-#     --speed      measure the download speed every SPEED_S seconds; each
-#                  test downloads SPEED_MB MB
-#     --check      read every source once, print the results and exit
-#     --log FILE   append the errors of the background measures to FILE
-#     --256        force 256 colours
-#     --truecolor  force 24-bit colour
-#     --install    install it for this user as the command "coshlink"
-#     --uninstall  remove what --install added
-#     -h, --help   show the options
+#   coSHLink.sh [-lsc] [-L file] [-8 | -t]
+#   coSHLink.sh -i | -u | -r
+#   coSHLink.sh -v | -h
 #
-#   --install copies the script to ~/.local/bin/coshlink (INSTALL_DIR) and,
-#   if that folder is not in the PATH, adds it in ~/.zshrc, ~/.bash_profile
-#   or ~/.bashrc, after the login shell. On Windows it also writes
-#   coshlink.cmd to %LOCALAPPDATA%\Microsoft\WindowsApps, so that
-#   "coshlink" works from PowerShell and cmd too. No administrator rights
-#   are needed. Run --install again to update the installed copy.
+#   -l, --loop        Run until Ctrl+C is pressed. Without it, stop
+#                     after RUN_S seconds.
+#   -s, --speed       Measure the download speed every SPEED_S seconds. Each
+#                     test downloads SPEED_MB MB.
+#   -c, --check       Read every source once, print the results and exit.
+#   -L, --log file    Append the errors of the background measurements to
+#                     file.
+#   -8, --256         Use 256 colours.
+#   -t, --truecolor   Use 24-bit colour.
+#   -i, --install     Install for this user as the command INSTALL_NAME in
+#                     INSTALL_DIR, adding that folder to the PATH if needed.
+#                     On Windows, also add INSTALL_NAME.cmd to WindowsApps
+#                     for PowerShell and cmd. On macOS, offer to show the
+#                     Wi-Fi name. Running it again changes nothing.
+#   -u, --update      Download the latest version from UPDATE_URL and
+#                     install it. A private repository needs GITHUB_TOKEN.
+#   -r, --uninstall   Remove what --install added.
+#   -v, --version     Print the version.
+#   -h, --help        Print this help.
+#
+#   Short options can be combined: -ls is -l -s.
 #
 #   macOS 15 and later hide the Wi-Fi name from scripts. To show it to every
 #   program, across reboots:
@@ -52,8 +61,8 @@
 #
 #   Privacy: the public IP is asked to ipinfo.io (IP_URL) every IP_S seconds
 #   and whenever the network changes, so that service learns where the
-#   computer is. api.ipify.org is asked only when ipinfo.io fails. With
-#   --speed, each test downloads from speed.cloudflare.com.
+#   computer is. api.ipify.org is asked only when ipinfo.io fails. With -s,
+#   each test downloads from speed.cloudflare.com.
 #
 # shellcheck disable=SC2086  # unquoted on purpose: numbers and lists of PIDs
 #
@@ -67,9 +76,11 @@ LOCAL="THIS COMPUTER"
 # Link names in the panel, internet first (ASCII, up to 9 characters)
 LINK_NAMES=(INTERNET GATEWAY)
 
-# Where --install puts the script, and the name of the command
+# Where --install puts the script, the name of the command, and where
+# --update downloads the latest version from
 INSTALL_DIR=$HOME/.local/bin
 INSTALL_NAME=coshlink
+UPDATE_URL=https://raw.githubusercontent.com/lolostt/coSHLink/main/coSHLink.sh
 
 # Latency in ms per link (internet, gateway): amber from WARN, red from CRIT
 LAT_WARN=(100 30)
@@ -125,7 +136,7 @@ BUILD="build 3"
 #
 
 # Read the command-line options into LOOP, CHECK, SPEED_ON, COLOR_MODE, LOG
-# and ACTION.
+# and ACTION. Combined short options (-ls) are split first.
 parse_args() {
   ACTION=""
   LOOP=0
@@ -134,17 +145,22 @@ parse_args() {
   COLOR_MODE=auto
   LOG=/dev/null
   while (( $# )); do
+    if [[ $1 =~ ^-[A-Za-z0-9]{2,}$ ]]; then
+      set -- "${1:0:2}" "-${1:2}" "${@:2}"
+    fi
     case $1 in
-      --loop)      LOOP=1 ;;
-      --check)     CHECK=1 ;;
-      --speed)     SPEED_ON=1 ;;
-      --log)       [[ -n $2 ]] || { echo "${0##*/}: --log needs a file" >&2; exit 2; }
-                   LOG=$2; shift ;;
-      --256)       COLOR_MODE=256 ;;
-      --truecolor) COLOR_MODE=24 ;;
-      --install)   ACTION=install ;;
-      --uninstall) ACTION=uninstall ;;
-      -h|--help)   echo "$USAGE"; exit 0 ;;
+      -l|--loop)      LOOP=1 ;;
+      -c|--check)     CHECK=1 ;;
+      -s|--speed)     SPEED_ON=1 ;;
+      -L|--log)       [[ -n $2 ]] || { echo "${0##*/}: $1 needs a file" >&2; exit 2; }
+                      LOG=$2; shift ;;
+      -8|--256)       COLOR_MODE=256 ;;
+      -t|--truecolor) COLOR_MODE=24 ;;
+      -i|--install)   ACTION=install ;;
+      -u|--update)    ACTION=update ;;
+      -r|--uninstall) ACTION=uninstall ;;
+      -v|--version)   echo "$APP $BUILD"; exit 0 ;;
+      -h|--help)      echo "$USAGE"; exit 0 ;;
       *) echo "${0##*/}: unknown option '$1'" >&2
          echo "$USAGE" >&2
          exit 2 ;;
@@ -152,7 +168,7 @@ parse_args() {
     shift
   done
   if (( ! CHECK )) && [[ -z $ACTION && ! -t 1 ]]; then
-    echo "${0##*/}: the output is not a terminal (try --check)" >&2; exit 2
+    echo "${0##*/}: the output is not a terminal (try -c)" >&2; exit 2
   fi
   if [[ $LOG != /dev/null ]]; then
     { : >> "$LOG"; } 2>/dev/null || { echo "${0##*/}: cannot write to $LOG" >&2; exit 2; }
@@ -178,38 +194,87 @@ win_cmd_file() {
   [[ -d ${CMD_FILE%/*} ]] || CMD_FILE=""
 }
 
-# --install: copy the script to INSTALL_DIR as INSTALL_NAME, put that folder
-# in the PATH if needed and, on Windows, add a .cmd for PowerShell and cmd.
+# On macOS 15 and later, offer to run "sudo ipconfig setverbose 1" so that
+# the Wi-Fi name is shown. Nothing is asked if it is already shown.
+offer_wifi_name() {
+  local v ssid a
+  [[ $OS == mac ]] || return
+  v=$(sw_vers -productVersion 2>/dev/null)
+  [[ $v =~ ^[0-9]+ ]] && (( ${v%%.*} >= 15 )) || return
+  find_wifi_if
+  [[ -n $WIFI_IF ]] || return
+  ssid=$(ipconfig getsummary "$WIFI_IF" 2>/dev/null | awk -F' : ' '/^ +SSID :/ { print $2; exit }')
+  [[ -n $ssid && $ssid != *redacted* ]] && return
+  echo "macOS hides the Wi-Fi name from scripts. To show it, run:"
+  echo "  sudo ipconfig setverbose 1"
+  [[ -n $ssid && -t 0 ]] || return     # not on Wi-Fi now, or no one to ask
+  read -r -p "Run it now? [y/N] " a
+  if [[ $a == [yY]* ]]; then
+    sudo ipconfig setverbose 1 && echo "The Wi-Fi name is now shown."
+  fi
+}
+
+# install_app [FILE]: copy FILE (this script by default) to INSTALL_DIR as
+# INSTALL_NAME, put that folder in the PATH if needed and, on Windows, add a
+# .cmd for PowerShell and cmd. Running it again changes nothing.
 install_app() {
-  local dest=$INSTALL_DIR/$INSTALL_NAME src=${BASH_SOURCE[0]}
+  local dest=$INSTALL_DIR/$INSTALL_NAME src=${1:-${BASH_SOURCE[0]}} cmd
   mkdir -p "$INSTALL_DIR" || { echo "${0##*/}: cannot create $INSTALL_DIR" >&2; exit 1; }
-  if [[ ! $src -ef $dest ]]; then
+  if [[ $src -ef $dest ]] || cmp -s "$src" "$dest"; then
+    echo "$dest is up to date"
+  else
     cp -f "$src" "$dest.tmp" && chmod 755 "$dest.tmp" && mv -f "$dest.tmp" "$dest" ||
       { rm -f "$dest.tmp"; echo "${0##*/}: cannot write $dest" >&2; exit 1; }
+    echo "Installed $dest"
   fi
-  echo "Installed $dest"
-  case ":$PATH:" in
-    *":$INSTALL_DIR:"*) ;;
-    *)
-      shell_rc
-      if [[ -z $RC ]]; then
-        echo "Add $INSTALL_DIR to your PATH to run it as $INSTALL_NAME."
-      elif ! grep -qF "$PATH_MARK" "$RC" 2>/dev/null; then
-        printf '\nexport PATH="%s:$PATH"  %s\n' "${INSTALL_DIR/#$HOME/\$HOME}" "$PATH_MARK" >> "$RC" ||
-          { echo "${0##*/}: cannot write $RC" >&2; exit 1; }
-        echo "Added $INSTALL_DIR to the PATH in $RC"
-      fi ;;
-  esac
+  shell_rc
+  if [[ -n $RC ]] && grep -qF "$PATH_MARK" "$RC" 2>/dev/null; then :
+  elif [[ ":$PATH:" == *":$INSTALL_DIR:"* ]]; then :
+  elif [[ -z $RC ]]; then
+    echo "Add $INSTALL_DIR to your PATH to run it as $INSTALL_NAME."
+  else
+    printf '\nexport PATH="%s:$PATH"  %s\n' "${INSTALL_DIR/#$HOME/\$HOME}" "$PATH_MARK" >> "$RC" ||
+      { echo "${0##*/}: cannot write $RC" >&2; exit 1; }
+    echo "Added $INSTALL_DIR to the PATH in $RC"
+  fi
   if [[ $OS == win ]]; then
     win_cmd_file
     if [[ -n $CMD_FILE ]]; then
-      printf '@echo off\r\nrem %s\r\nset CHERE_INVOKING=1\r\n"%s" -l "%s" %%*\r\n' \
-        "$CMD_MARK" "$(cygpath -w /)\bin\bash.exe" "$(cygpath -w "$dest")" > "$CMD_FILE" ||
-        { echo "${0##*/}: cannot write $CMD_FILE" >&2; exit 1; }
-      echo "Installed $CMD_FILE"
+      printf -v cmd '@echo off\r\nrem %s\r\nset CHERE_INVOKING=1\r\n"%s" -l "%s" %%*\r\n' \
+        "$CMD_MARK" "$(cygpath -w /)\bin\bash.exe" "$(cygpath -w "$dest")"
+      if ! [[ -f $CMD_FILE && "$(< "$CMD_FILE")"$'\n' == "$cmd" ]]; then
+        printf '%s' "$cmd" > "$CMD_FILE" ||
+          { echo "${0##*/}: cannot write $CMD_FILE" >&2; exit 1; }
+        echo "Installed $CMD_FILE"
+      fi
     fi
   fi
-  echo "Open a new terminal and run: $INSTALL_NAME --loop"
+  offer_wifi_name
+  echo "Run it with: $INSTALL_NAME -l (in a new terminal if the PATH changed)"
+}
+
+# --update: download the latest version from UPDATE_URL, check that it is a
+# whole coSHLink script, and install it. GITHUB_TOKEN, if set, is sent
+# through curl's standard input, never on its command line.
+update_app() {
+  local tmp old new
+  tmp=$(mktemp "${TMPDIR:-/tmp}/coSHLink.XXXXXX") ||
+    { echo "${0##*/}: cannot create a temporary file" >&2; exit 1; }
+  trap 'rm -f "$tmp"' EXIT
+  if [[ -n $GITHUB_TOKEN ]]; then
+    printf 'header = "Authorization: token %s"\n' "$GITHUB_TOKEN" |
+      curl -fsSL -m 30 -K - -o "$tmp" "$UPDATE_URL"
+  else
+    curl -fsSL -m 30 -o "$tmp" "$UPDATE_URL"
+  fi || { echo "${0##*/}: cannot download $UPDATE_URL" >&2; exit 1; }
+  if [[ $(head -n 1 "$tmp") != '#!/usr/bin/env bash' ]] ||
+     ! grep -q '^# coSHLink$' "$tmp" || ! bash -n "$tmp" 2>/dev/null; then
+    echo "${0##*/}: the download is not a valid coSHLink script" >&2; exit 1
+  fi
+  old=$(grep -m 1 '^# Build:' "$INSTALL_DIR/$INSTALL_NAME" 2>/dev/null)
+  new=$(grep -m 1 '^# Build:' "$tmp")
+  echo "Installed: ${old:-none}, latest: $new" | sed 's/# //g'
+  install_app "$tmp"
 }
 
 # --uninstall: remove the installed copy, the PATH line and the .cmd, only
@@ -234,6 +299,8 @@ uninstall_app() {
   fi
   rmdir "$INSTALL_DIR" "${INSTALL_DIR%/*}" 2>/dev/null   # only if empty
   echo "coSHLink is uninstalled."
+  [[ $OS == mac ]] && echo "If you ran \"sudo ipconfig setverbose 1\", undo it with \"sudo ipconfig setverbose 0\"."
+  return 0
 }
 
 # Map a colour level 0-255 to an index 0-5 of the 256-colour cube, in CUBE.
@@ -1733,20 +1800,22 @@ main_loop() {
 # ============================================================================
 #
 
-USAGE="Usage: ${0##*/} [--loop] [--speed] [--check] [--log FILE] [--256 | --truecolor]
-  --loop       run forever (Ctrl+C to quit); default is RUN_S seconds
-  --speed      measure the download speed every SPEED_S seconds (it
-               downloads SPEED_MB MB each time: mind a metered connection)
-  --check      read every source once, print what it returns and exit
-               (no animation)
-  --log FILE   append the errors of the background measures to FILE
-               (they are discarded otherwise)
-  --256        force 256 colors
-  --truecolor  force 24-bit color
-  --install    install it for this user as the command \"coshlink\"
-  --uninstall  remove what --install added
-  -h, --help   show this help"
+USAGE="Usage: ${0##*/} [-lsc] [-L file] [-8 | -t]
+       ${0##*/} -i | -u | -r
+       ${0##*/} -v | -h
 
+  -l, --loop        run until Ctrl+C is pressed (otherwise $RUN_S s)
+  -s, --speed       measure the download speed every $SPEED_S s ($SPEED_MB MB
+                    each time: mind a metered connection)
+  -c, --check       read every source once, print the results and exit
+  -L, --log file    append the errors of the background measurements to file
+  -8, --256         use 256 colours
+  -t, --truecolor   use 24-bit colour
+  -i, --install     install for this user as the command \"$INSTALL_NAME\"
+  -u, --update      download the latest version and install it
+  -r, --uninstall   remove what --install added
+  -v, --version     print the version
+  -h, --help        print this help"
 # When sourced (". coSHLink.sh"), the script only defines its functions and
 # settings; the options are read and the animation starts only when run.
 LOOP=0; CHECK=0; SPEED_ON=0; COLOR_MODE=auto; LOG=/dev/null; ACTION=""
