@@ -3,7 +3,7 @@
 A live map of the network path from your computer to the internet, drawn in
 an 80x24 terminal.
 
-<p align="center">
+<p>
   <img src="https://github.com/user-attachments/assets/ceb8d2d5-6fa1-4b0f-95f9-9e23c96d77de" alt="coSHLink running with sample data" width="800">
 </p>
 
@@ -182,7 +182,7 @@ MIT. See [LICENSE](LICENSE).
 
 ---
 
-<p align="center">
-  <a href="https://github.com/lolostt/coSHLink"><img src="https://github.com/user-attachments/assets/85619289-29ae-406d-badb-23e38b30bebe" alt="Sleeping Coconut" width="20" height="20" align="absmiddle"></a>
+<p>
+  <a href="https://github.com/lolostt/coSHLink"><img src="https://github.com/user-attachments/assets/85619289-29ae-406d-badb-23e38b30bebe" alt="Sleeping Coconut" width="32" height="32" align="absmiddle"></a>
   · <a href="https://sleepingcoconut.com">www.sleepingcoconut.com</a> · 2026
 </p>
