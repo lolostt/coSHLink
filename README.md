@@ -3,10 +3,9 @@
 A live map of the network path from this computer to the internet, drawn in
 an 80x24 terminal.
 
-![coSHLink running with sample data](docs/coSHLink.png)
-
-*The animation shows sample data: a weak Wi-Fi, a slow internet link and a
-cut one, and the recovery.*
+<p align="center">
+  <img src="docs/coSHLink.png" alt="coSHLink running with sample data" width="800">
+</p>
 
 coSHLink draws this computer, the gateway and the internet as a diagram. Each
 link pulses in green, amber or red while it is up, degraded or down, and the
@@ -19,41 +18,89 @@ NAT and the download speed.
 It is a single bash script. It installs nothing and needs no administrator
 rights.
 
-## Run it
+## Download
 
-Download `coSHLink.sh` (or clone the repository). The script needs execute
-permission; a clone keeps it, but a downloaded file usually loses it. Give it
-in a terminal, in the folder that holds the script:
+In a terminal, in the folder where you want it:
 
 ```sh
-chmod +x coSHLink.sh
+curl -fsSL https://raw.githubusercontent.com/lolostt/coSHLink/main/coSHLink.sh -o coSHLink.sh && chmod +x coSHLink.sh
 ```
 
-On macOS, to double-click the launcher, give it permission too:
+- 🍎 **macOS** and 🐧 **Linux**: any terminal.
+- 🪟 **Windows**: Git Bash (see [Requirements](#requirements)).
 
-```sh
-chmod +x coSHLink.sh coSHLink.command
-```
+## Three ways to run it
 
-Then run it:
+### 1. Run the script
 
 ```sh
 ./coSHLink.sh -l
 ```
 
-Without that permission it also runs as `bash coSHLink.sh -l`.
-
 Press `q` or `Ctrl+C` to quit. Without `-l` it stops after 60 seconds.
 
-You can also double-click a launcher, kept next to `coSHLink.sh`:
+### 2. Install it as a command
 
-| System  | Launcher           |
-|---------|--------------------|
-| macOS   | `coSHLink.command` |
-| Windows | `coSHLink.bat`     |
-| Linux   | `coSHLink.desktop` |
+```sh
+./coSHLink.sh -i
+```
 
-### Options
+Then, in a new terminal and from any folder:
+
+```sh
+coshlink -l
+```
+
+The installer copies the script to `~/.local/bin/coshlink` and, if that
+folder is not in your `PATH`, adds one marked line to `~/.zshrc`,
+`~/.bash_profile` or `~/.bashrc`, depending on your shell.
+
+- 🍎 **macOS**: on macOS 15 and later it offers to run
+  `sudo ipconfig setverbose 1`, so that the Wi-Fi name is shown (see
+  [Wi-Fi name on macOS](#wi-fi-name-on-macos)).
+- 🪟 **Windows**: run `./coSHLink.sh -i` in Git Bash. It also writes
+  `coshlink.cmd` to `%LOCALAPPDATA%\Microsoft\WindowsApps`, so `coshlink -l`
+  works in PowerShell and cmd too.
+
+To update it to the latest version on GitHub:
+
+```sh
+coshlink -u
+```
+
+To uninstall it (this removes only what `-i` added):
+
+```sh
+coshlink -r
+```
+
+### 3. Double-click a launcher
+
+Download the launcher for your system into the same folder as `coSHLink.sh`,
+then double-click it. It opens an 80x24 window running `coSHLink.sh -l`.
+
+- 🍎 **macOS**:
+
+  ```sh
+  curl -fsSL https://raw.githubusercontent.com/lolostt/coSHLink/main/coSHLink.command -o coSHLink.command && chmod +x coSHLink.command
+  ```
+
+- 🪟 **Windows** (in Git Bash):
+
+  ```sh
+  curl -fsSL https://raw.githubusercontent.com/lolostt/coSHLink/main/coSHLink.bat -o coSHLink.bat
+  ```
+
+- 🐧 **Linux**:
+
+  ```sh
+  curl -fsSL https://raw.githubusercontent.com/lolostt/coSHLink/main/coSHLink.desktop -o coSHLink.desktop && chmod +x coSHLink.desktop
+  ```
+
+  The first time, GNOME Files asks you to allow it (right click, "Allow
+  Launching").
+
+## Options
 
 | Short | Long          | What it does                                                    |
 |-------|---------------|-----------------------------------------------------------------|
@@ -75,58 +122,12 @@ script.
 
 By default the download speed is measured every 10 minutes, and each test
 downloads 25 MB: about 150 MB an hour while it runs. On a metered connection,
-use `-n`. Without internet the test fails at once, says so, and is tried again
-a minute later.
-
-## Install
-
-```sh
-./coSHLink.sh -i
-```
-
-This copies the script to `~/.local/bin/coshlink` and, if that folder is not
-in your `PATH`, adds one marked line to `~/.zshrc`, `~/.bash_profile` or
-`~/.bashrc`, depending on your shell. Open a new terminal and run it from any
-folder:
-
-```sh
-coshlink -l
-```
-
-On Windows, run the same command in Git Bash. It also writes `coshlink.cmd` to
-`%LOCALAPPDATA%\Microsoft\WindowsApps`, so `coshlink -l` works in PowerShell
-and cmd too.
-
-On macOS 15 and later, the installer offers to run `sudo ipconfig setverbose 1`
-so that the Wi-Fi name is shown (see [Wi-Fi name on macOS](#wi-fi-name-on-macos)).
-
-Running `-i` again changes nothing unless the script has changed.
-
-## Update
-
-```sh
-coshlink -u
-```
-
-This downloads the latest `coSHLink.sh` from the `main` branch on GitHub,
-checks that it is a complete coSHLink script, and installs it in place of the
-current one. While the repository is private, set a GitHub token with read
-access first: `GITHUB_TOKEN=... coshlink -u`. The token is passed to curl
-through its standard input and is not saved anywhere.
-
-## Uninstall
-
-```sh
-coshlink -r
-```
-
-This removes `~/.local/bin/coshlink`, the `PATH` line and, on Windows,
-`coshlink.cmd`. It only removes what `--install` wrote.
+use `-n`.
 
 ## Wi-Fi name on macOS
 
-macOS 15 and later hide the Wi-Fi name from scripts, and coSHLink then shows
-it as "(name hidden)". To show it to every program, across reboots:
+🍎 macOS 15 and later hide the Wi-Fi name from scripts, and coSHLink then
+shows it as "(name hidden)". To show it to every program, across reboots:
 
 ```sh
 sudo ipconfig setverbose 1
@@ -140,38 +141,42 @@ sudo ipconfig setverbose 0
 
 ## Requirements
 
-| System  | Minimum                           | Needs                                                    |
-|---------|-----------------------------------|----------------------------------------------------------|
-| macOS   | macOS 12 Monterey                 | Nothing: everything it uses ships with macOS.            |
-| Linux   | bash 5 (Ubuntu 20.04, Debian 10, Fedora 30, RHEL 9) | `iproute2`, `ping`, `curl`, `nslookup`, `iconv`, `traceroute` |
-| Windows | Windows 10 with Git for Windows   | Git Bash. Windows Terminal is used when it is installed. |
+| System        | Minimum                                             | Needs                                                         |
+|---------------|-----------------------------------------------------|---------------------------------------------------------------|
+| 🍎 macOS      | macOS 12 Monterey                                   | Nothing: everything it uses ships with macOS.                 |
+| 🐧 Linux      | bash 5 (Ubuntu 20.04, Debian 10, Fedora 30, RHEL 9) | `iproute2`, `ping`, `curl`, `nslookup`, `iconv`, `traceroute` |
+| 🪟 Windows    | Windows 10                                          | [Git for Windows](https://gitforwindows.org/), which brings Git Bash. [Windows Terminal](https://learn.microsoft.com/windows/terminal/) is used if it is installed. |
 
-Notes on these versions:
-
-- **macOS.** The script runs on the bash 3.2 that macOS ships, and then uses
-  `perl` (also built in) to pace the frames. Every tool it calls (`curl`,
-  `ping`, `nslookup`, `traceroute`, `netstat`, `ipconfig`, `networksetup`,
-  `system_profiler`) has been part of macOS for many years. The Wi-Fi details
-  come from `system_profiler` and `ipconfig getsummary`, whose output Apple
-  changes from time to time. macOS 12 is the oldest version whose output
-  format the script expects. Older versions may still run, but with an empty
-  Wi-Fi box. Terminal shows 24-bit colour from macOS 26; before that it uses
-  256 colours.
-- **Linux.** Before it starts, the script checks that every tool is there.
-  If one is missing, it names the packages to install (for `apt-get`, `dnf`,
-  `yum`, `zypper`, `pacman` or `apk`) and exits.
-  With bash 5.0 or later, the frames are paced and timed with
-  bash alone. With bash 3.2 or 4, `perl` is needed for smooth animation
-  (without it the animation still runs, but less evenly). On minimal
-  installations, `nslookup` comes in `dnsutils` (Debian, Ubuntu) or
-  `bind-utils` (Fedora, RHEL), and `traceroute` in its own package. Without
-  `traceroute` there is no CG-NAT warning. The Wi-Fi box shows "no details on
+- 🍎 **macOS.** The script runs on the bash 3.2 that macOS ships, and then
+  uses `perl` (also built in) to pace the frames. Every tool it calls
+  (`curl`, `ping`, `nslookup`, `traceroute`, `netstat`, `ipconfig`,
+  `networksetup`, `system_profiler`) has been part of macOS for many years.
+  The Wi-Fi details come from `system_profiler` and `ipconfig getsummary`,
+  whose output Apple changes from time to time. macOS 12 is the oldest
+  version whose output format the script expects. Older versions may still
+  run, but with an empty Wi-Fi box. Terminal shows 24-bit colour from macOS
+  26; before that it uses 256 colours.
+- 🐧 **Linux.** Before it starts, the script checks that every tool is
+  there. If one is missing, it names the packages to install (for `apt-get`,
+  `dnf`, `yum`, `zypper`, `pacman` or `apk`) and exits. With bash 5.0 or
+  later, the frames are paced and timed with bash alone. With bash 3.2 or 4,
+  `perl` is needed for smooth animation (without it the animation still
+  runs, but less evenly). On minimal installations, `nslookup` comes in
+  `dnsutils` (Debian, Ubuntu) or `bind-utils` (Fedora, RHEL), and
+  `traceroute` in its own package. The Wi-Fi box shows "no details on
   Linux".
-- **Windows.** Git for Windows ships bash 5. Windows Terminal needs Windows 10
-  version 2004 or later; without it the launcher uses mintty, which comes
-  with Git.
+- 🪟 **Windows.** Git for Windows ships bash 5. Windows Terminal needs
+  Windows 10 version 2004 or later; without it the launcher uses mintty,
+  which comes with Git.
 
-Run `coshlink -c` to see which tools are missing on your computer.
+Run `./coSHLink.sh -c` to see which tools are missing on your computer.
+
+## How it works
+
+The measurements run in background processes, so the drawing never waits for
+the network. They write their results to a private temporary directory that
+only your user can open, and that is removed on exit. On Linux it is in
+`/dev/shm`, in memory, unless `TMPDIR` is set.
 
 ## Privacy
 
@@ -182,14 +187,14 @@ changes, so that service learns roughly where the computer is.
 Each speed test downloads from `speed.cloudflare.com`, unless you use `-n`.
 Nothing else leaves the computer.
 
-The measurements are written to a private temporary directory that only your
-user can open, and that is removed on exit. On Linux it is in `/dev/shm`, in
-memory, unless `TMPDIR` is set.
-
 ## License
 
 MIT. See [LICENSE](LICENSE).
 
 ---
 
-[www.sleepingcoconut.com](https://sleepingcoconut.com) · 2026
+<p align="center">
+  <a href="https://github.com/lolostt/coSHLink"><img src="docs/author.png" alt="Sleeping Coconut" width="64"></a>
+  <br>
+  <a href="https://sleepingcoconut.com">www.sleepingcoconut.com</a> · 2026
+</p>
