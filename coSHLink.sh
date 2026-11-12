@@ -62,25 +62,24 @@
 # ============================================================================
 #
 
-# Status box title (ASCII, up to 11 characters)
-APP=coSHLink
-# Footer, bottom right: "MAKER · YEAR · BUILD" (ASCII)
-MAKER="www.sleepingcoconut.com"
-YEAR=2026
-BUILD="build 3"
 # Label under the computer drawing (ASCII, up to 15 characters)
 LOCAL="THIS COMPUTER"
 # Link names in the panel, internet first (ASCII, up to 9 characters)
 LINK_NAMES=(INTERNET GATEWAY)
 
-# Ping targets of the internet link: each round shows the one that answers better
-INET_TARGET=1.1.1.1
-INET_ALT=8.8.8.8
+# Where --install puts the script, and the name of the command
+INSTALL_DIR=$HOME/.local/bin
+INSTALL_NAME=coshlink
+
 # Latency in ms per link (internet, gateway): amber from WARN, red from CRIT
 LAT_WARN=(100 30)
 LAT_CRIT=(200 80)
 # Loss in % above which a wired link is degraded
 LOSS_WARN=5
+
+# Wi-Fi signal in dBm for 4, 3 (green), 2 (amber) and 1 bar (red)
+SIG_DBM=(-55 -65 -75 -85)
+
 # Over Wi-Fi a link is degraded only if the median latency stays at or above
 # LAT_WARN for WIFI_SLOW_ROUNDS rounds in a row, or loss exceeds WIFI_LOSS_WARN %
 WIFI_SLOW_ROUNDS=3
@@ -92,8 +91,11 @@ PINGS=4                            # pings per target and round
 RUN_S=60                           # seconds to run without --loop
 LINK_MBPS=(100 300)                # full scale of the traffic meters, Mbit/s
 WIFI_S=15                          # seconds between reads of the Wi-Fi state
-# Wi-Fi signal in dBm for 4, 3 (green), 2 (amber) and 1 bar (red)
-SIG_DBM=(-55 -65 -75 -85)
+
+# Ping targets of the internet link: each round shows the one that answers better
+INET_TARGET=1.1.1.1
+INET_ALT=8.8.8.8
+
 # Names resolved each round to check the DNS
 DNS_NAMES=(www.google.com www.wikipedia.org)
 
@@ -109,9 +111,12 @@ SPEED_MB=25
 SPEED_MAX_S=15
 SPEED_S=600
 
-# Where --install puts the script, and the name of the command
-INSTALL_DIR=$HOME/.local/bin
-INSTALL_NAME=coshlink
+# Status box title (ASCII, up to 11 characters)
+APP=coSHLink
+# Footer, bottom right: "MAKER · YEAR · BUILD" (ASCII)
+MAKER="www.sleepingcoconut.com"
+YEAR=2026
+BUILD="build 3"
 
 #
 # ============================================================================
