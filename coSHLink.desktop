@@ -1,6 +1,6 @@
 [Desktop Entry]
 # coSHLink: double-click in the file manager to open a terminal window
-# running coSHLink.sh --loop (Ctrl+C quits). Keep it next to coSHLink.sh.
+# running coSHLink.sh --loop (q or Ctrl+C quits). Keep it next to coSHLink.sh.
 # The first time, GNOME Files asks to trust it (right click, "Allow
 # Launching"); KDE Dolphin asks to make it executable.
 Type=Application

@@ -1,6 +1,6 @@
 #!/bin/bash
 # coSHLink: double-click in Finder to open a Terminal window running
-# coSHLink.sh --loop. Ctrl+C quits.
+# coSHLink.sh --loop. q or Ctrl+C quits.
 
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/coSHLink.sh"
 

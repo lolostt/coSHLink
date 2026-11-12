@@ -31,7 +31,7 @@
 #   coSHLink.sh -i | -u | -r
 #   coSHLink.sh -v | -h
 #
-#   -l, --loop        Run until Ctrl+C is pressed. Without it, stop
+#   -l, --loop        Run until q or Ctrl+C is pressed. Without it, stop
 #                     after RUN_S seconds.
 #   -s, --speed       Measure the download speed every SPEED_S seconds. Each
 #                     test downloads SPEED_MB MB.
@@ -398,11 +398,12 @@ cleanup() {
   (( HIDDEN )) && { term_restore; echo; }
 }
 
-# Hide the cursor and the keys typed.
+# Hide the cursor and the keys typed, and let keys be read one at a time
+# without waiting (for q).
 term_hide() {
   HIDDEN=1
   printf '%s' "${ESC}[?25l"
-  [[ -t 0 ]] && stty -echo 2>/dev/null
+  [[ -t 0 ]] && stty -echo -icanon min 0 time 0 2>/dev/null
 }
 
 # Show the cursor and put the terminal settings back.
@@ -1766,9 +1767,14 @@ flush_frame() {
   printf '%s' "$out"
 }
 
-# The animation: one frame per turn, until RUN_S seconds or Ctrl+C.
+# The animation: one frame per turn, until RUN_S seconds, q or Ctrl+C.
 main_loop() {
+  local key
   while :; do
+    if (( KEYS )); then               # a plain read: -n would wait for a key
+      key=""; IFS= read -r key 2>/dev/null
+      [[ $key == *[qQ]* ]] && break
+    fi
     if (( RESUMED )); then RESUMED=0; reserve_lines; FIRST=1; fi
     if (( RESIZED )); then            # the window changed: clear it and
       RESIZED=0                       # redraw everything from the top
@@ -1804,7 +1810,7 @@ USAGE="Usage: ${0##*/} [-lsc] [-L file] [-8 | -t]
        ${0##*/} -i | -u | -r
        ${0##*/} -v | -h
 
-  -l, --loop        run until Ctrl+C is pressed (otherwise $RUN_S s)
+  -l, --loop        run until q or Ctrl+C is pressed (otherwise $RUN_S s)
   -s, --speed       measure the download speed every $SPEED_S s ($SPEED_MB MB
                     each time: mind a metered connection)
   -c, --check       read every source once, print the results and exit
@@ -2070,6 +2076,7 @@ OV_PREV=()                           # box rows last sent, by map row
 PANEL_PREV=()                        # panel rows last sent
 INFO_KEY=""; SCR_KEY=""; LIGHT_KEY=""; GLOBE_KEY=""; WBOX_KEY=""
 FIRST=1
+KEYS=0; [[ -t 0 ]] && KEYS=1          # q quits only when typed in a terminal
 
 [[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
 

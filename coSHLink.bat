@@ -1,6 +1,6 @@
 @echo off
 rem coSHLink: double-click to open a window running coSHLink.sh --loop
-rem (Windows Terminal, else mintty). Ctrl+C quits.
+rem (Windows Terminal, else mintty). q or Ctrl+C quits.
 rem Ctrl+C (exit 130) counts as a clean exit, so Windows Terminal closes
 rem the tab; on an error (window too small, ...) the tab stays open.
 setlocal
