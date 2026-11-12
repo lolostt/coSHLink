@@ -223,7 +223,8 @@ offer_wifi_name() {
 install_app() {
   local dest=$INSTALL_DIR/$INSTALL_NAME src=${1:-${BASH_SOURCE[0]}} cmd
   mkdir -p "$INSTALL_DIR" || { echo "${0##*/}: cannot create $INSTALL_DIR" >&2; exit 1; }
-  if [[ $src -ef $dest ]] || cmp -s "$src" "$dest"; then
+  if [[ $src -ef $dest ]] ||
+     { [[ -f $dest ]] && [[ $(cksum < "$src") == "$(cksum < "$dest")" ]]; }; then
     echo "$dest is up to date"
   else
     cp -f "$src" "$dest.tmp" && chmod 755 "$dest.tmp" && mv -f "$dest.tmp" "$dest" ||
