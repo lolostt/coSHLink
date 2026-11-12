@@ -57,17 +57,7 @@ missing from your `PATH`, it adds one marked line to `~/.zshrc`,
 > `%LOCALAPPDATA%\Microsoft\WindowsApps`, so `coshlink -l` works in
 > PowerShell and cmd as well as in Git Bash.
 
-Update to the latest version on GitHub:
-
-```sh
-coshlink -u
-```
-
-Uninstall (removes only what `-i` added):
-
-```sh
-coshlink -r
-```
+To update or remove it, see [Update](#update) and [Uninstall](#uninstall).
 
 ### 3. Double-click a launcher
 
@@ -93,6 +83,38 @@ with the latest version.
   ```sh
   for f in coSHLink.sh coSHLink.desktop; do curl -fsSL "https://raw.githubusercontent.com/lolostt/coSHLink/main/$f" -o "$f" && chmod +x "$f"; done
   ```
+
+## Update
+
+If you installed it as a command, download the latest version from GitHub
+and install it over the old one:
+
+```sh
+coshlink -u
+```
+
+It checks that the download is a whole coSHLink script before replacing
+anything, and prints the build installed and the latest one.
+
+If you run the script or a launcher from a folder, download it again with
+the same command you used the first time.
+
+## Uninstall
+
+If you installed it as a command:
+
+```sh
+coshlink -r
+```
+
+This removes `~/.local/bin/coshlink`, the `PATH` line added to your shell
+startup file and, on Windows, `coshlink.cmd`. It removes only what `-i`
+added, and leaves anything else in those files as it was.
+
+🍎 If you ran `sudo ipconfig setverbose 1`, undo it with
+`sudo ipconfig setverbose 0`.
+
+If you run the script or a launcher from a folder, delete the files.
 
 ## Options
 
@@ -162,7 +184,7 @@ sudo ipconfig setverbose 0
 ```
 
 🐧 **Linux.** The Wi-Fi box shows "no details on Linux". coSHLink only uses
-tools that every distribution ships, and none of them reports the Wi-Fi
+tools that every distribution ships, and none of those reports the Wi-Fi
 network. That information comes from `iw`, `nmcli` (NetworkManager) or
 `iwctl` (iwd), and which one is present depends on the distribution and the
 desktop. Rather than require one of them, coSHLink leaves the box empty. The
