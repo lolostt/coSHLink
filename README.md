@@ -3,9 +3,10 @@
 A live map of the network path from this computer to the internet, drawn in
 an 80x24 terminal.
 
-![coSHLink running with sample data](docs/coSHLink.gif)
+![coSHLink running with sample data](docs/coSHLink.png)
 
-*The animation shows sample data.*
+*The animation shows sample data: a weak Wi-Fi, a slow internet link and a
+cut one, and the recovery.*
 
 coSHLink draws this computer, the gateway and the internet as a diagram. Each
 link pulses in green, amber or red while it is up, degraded or down, and the
@@ -20,11 +21,27 @@ rights.
 
 ## Run it
 
-Download `coSHLink.sh` (or clone the repository) and run it from a terminal:
+Download `coSHLink.sh` (or clone the repository). The script needs execute
+permission; a clone keeps it, but a downloaded file usually loses it. Give it
+in a terminal, in the folder that holds the script:
+
+```sh
+chmod +x coSHLink.sh
+```
+
+On macOS, to double-click the launcher, give it permission too:
+
+```sh
+chmod +x coSHLink.sh coSHLink.command
+```
+
+Then run it:
 
 ```sh
 ./coSHLink.sh -l
 ```
+
+Without that permission it also runs as `bash coSHLink.sh -l`.
 
 Press `q` or `Ctrl+C` to quit. Without `-l` it stops after 60 seconds.
 
@@ -135,7 +152,10 @@ Notes on these versions:
   format the script expects. Older versions may still run, but with an empty
   Wi-Fi box. Terminal shows 24-bit colour from macOS 26; before that it uses
   256 colours.
-- **Linux.** With bash 5.0 or later, the frames are paced and timed with
+- **Linux.** Before it starts, the script checks that every tool is there.
+  If one is missing, it names the packages to install (for `apt-get`, `dnf`,
+  `yum`, `zypper`, `pacman` or `apk`) and exits.
+  With bash 5.0 or later, the frames are paced and timed with
   bash alone. With bash 3.2 or 4, `perl` is needed for smooth animation
   (without it the animation still runs, but less evenly). On minimal
   installations, `nslookup` comes in `dnsutils` (Debian, Ubuntu) or
@@ -158,7 +178,8 @@ changes, so that service learns roughly where the computer is.
 leaves the computer.
 
 The measurements are written to a private temporary directory that only your
-user can open, and that is removed on exit.
+user can open, and that is removed on exit. On Linux it is in `/dev/shm`, in
+memory, unless `TMPDIR` is set.
 
 ## License
 
