@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # coSHLink
-# Build: 3
+# Build: 4
 #
 # https://github.com/lolostt/coSHLink
 # Copyright (C) 2026 Sleeping Coconut https://sleepingcoconut.com
@@ -130,7 +130,7 @@ APP=coSHLink
 MAKER="www.sleepingcoconut.com"
 MAKER_URL=https://sleepingcoconut.com    # opened by clicking MAKER
 YEAR=2026
-BUILD="build 3"
+BUILD="build 4"
 
 #
 # ============================================================================
