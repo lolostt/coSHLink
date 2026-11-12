@@ -18,6 +18,21 @@ optionally, the download speed.
 It is a single bash script. It installs nothing and needs no administrator
 rights.
 
+## Contents
+
+- [Three ways to run it](#three-ways-to-run-it)
+  - [1. Run the script](#1-run-the-script)
+  - [2. Install it as a command](#2-install-it-as-a-command)
+  - [3. Double-click a launcher](#3-double-click-a-launcher)
+- [Update](#update)
+- [Uninstall](#uninstall)
+- [Options](#options)
+- [Requirements](#requirements)
+- [Wi-Fi details](#wi-fi-details)
+- [How it works](#how-it-works)
+- [Privacy](#privacy)
+- [License](#license)
+
 ## Three ways to run it
 
 - 🍎 **macOS** and 🐧 **Linux**: use any terminal.
