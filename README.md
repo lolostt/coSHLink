@@ -116,21 +116,6 @@ intervals live in the *User configuration* section at the top of the script.
 With `-s`, a speed test runs every 30 seconds and downloads up to 20 MB each
 time. Avoid it on a metered connection.
 
-## Wi-Fi name on macOS
-
-🍎 macOS 15 and later hide the Wi-Fi name from scripts, so coSHLink shows
-"(name hidden)". To reveal it to every program, across reboots:
-
-```sh
-sudo ipconfig setverbose 1
-```
-
-To hide it again:
-
-```sh
-sudo ipconfig setverbose 0
-```
-
 ## Requirements
 
 | System        | Minimum                                             | Needs                                                         |
@@ -153,12 +138,37 @@ sudo ipconfig setverbose 0
   on its own; with bash 3.2 or 4, `perl` keeps the animation smooth. On
   minimal installs, `nslookup` comes in `dnsutils` (Debian, Ubuntu) or
   `bind-utils` (Fedora, RHEL), and `traceroute` in its own package. The Wi-Fi
-  box shows "no details on Linux".
+  box shows no details (see [Wi-Fi details](#wi-fi-details)).
 - 🪟 **Windows.** Git for Windows ships bash 5. Windows Terminal needs
   Windows 10 version 2004 or later; without it, the launcher uses mintty,
   included with Git.
 
 Run `./coSHLink.sh -c` to list the tools missing on your computer.
+
+## Wi-Fi details
+
+🍎 **macOS.** macOS 15 and later hide the Wi-Fi name from scripts, so
+coSHLink shows "(name hidden)". To reveal it to every program, across
+reboots:
+
+```sh
+sudo ipconfig setverbose 1
+```
+
+To hide it again:
+
+```sh
+sudo ipconfig setverbose 0
+```
+
+🐧 **Linux.** The Wi-Fi box shows "no details on Linux". coSHLink only uses
+tools that every distribution ships, and none of them reports the Wi-Fi
+network. That information comes from `iw`, `nmcli` (NetworkManager) or
+`iwctl` (iwd), and which one is present depends on the distribution and the
+desktop. Rather than require one of them, coSHLink leaves the box empty. The
+rest of the map works the same: the gateway, the addresses and the traffic
+come from `ip route` and `/sys`, and the link to the gateway is still drawn
+dashed over Wi-Fi.
 
 ## How it works
 
