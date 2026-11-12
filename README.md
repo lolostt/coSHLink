@@ -14,7 +14,7 @@ link to the gateway is dashed over Wi-Fi and solid over a cable. A panel lists
 the traffic, latency, jitter and loss of each link. Around the map you see the
 Wi-Fi network, the local and gateway addresses, the state of the DNS, the
 public IP address with its location and operator, a possible carrier-grade
-NAT and, if you ask for it, the download speed.
+NAT and the download speed.
 
 It is a single bash script. It installs nothing and needs no administrator
 rights.
@@ -58,7 +58,7 @@ You can also double-click a launcher, kept next to `coSHLink.sh`:
 | Short | Long          | What it does                                                    |
 |-------|---------------|-----------------------------------------------------------------|
 | `-l`  | `--loop`      | Run until `q` or `Ctrl+C`.                                      |
-| `-s`  | `--speed`     | Measure the download speed every 10 minutes (25 MB each time).  |
+| `-n`  | `--no-speed`  | Do not measure the download speed (see below).                  |
 | `-c`  | `--check`     | Read every source once, print the results and exit.             |
 | `-L`  | `--log FILE`  | Append the errors of the background measurements to `FILE`.     |
 | `-8`  | `--256`       | Use 256 colours.                                                |
@@ -69,9 +69,14 @@ You can also double-click a launcher, kept next to `coSHLink.sh`:
 | `-v`  | `--version`   | Print the version.                                              |
 | `-h`  | `--help`      | Print the help.                                                 |
 
-Short options can be combined: `-ls` is `-l -s`. The thresholds, ping targets
+Short options can be combined: `-ln` is `-l -n`. The thresholds, ping targets
 and intervals are in the *User configuration* section at the top of the
 script.
+
+By default the download speed is measured every 10 minutes, and each test
+downloads 25 MB: about 150 MB an hour while it runs. On a metered connection,
+use `-n`. Without internet the test fails at once, says so, and is tried again
+a minute later.
 
 ## Install
 
@@ -173,9 +178,9 @@ Run `coshlink -c` to see which tools are missing on your computer.
 To show the public IP with its place and operator, coSHLink asks
 [ipinfo.io](https://ipinfo.io) every 5 minutes and whenever the network
 changes, so that service learns roughly where the computer is.
-[api.ipify.org](https://www.ipify.org) is asked only if ipinfo.io fails. With
-`-s`, each speed test downloads from `speed.cloudflare.com`. Nothing else
-leaves the computer.
+[api.ipify.org](https://www.ipify.org) is asked only if ipinfo.io fails.
+Each speed test downloads from `speed.cloudflare.com`, unless you use `-n`.
+Nothing else leaves the computer.
 
 The measurements are written to a private temporary directory that only your
 user can open, and that is removed on exit. On Linux it is in `/dev/shm`, in
