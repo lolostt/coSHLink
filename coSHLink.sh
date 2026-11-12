@@ -13,7 +13,7 @@
 # A panel lists the traffic, latency, jitter and loss of each link. Around
 # the map it shows the Wi-Fi network, the local and gateway addresses, the
 # state of the DNS, the public IP address with its location and operator, a
-# possible carrier-grade NAT and the download speed.
+# possible carrier-grade NAT and, with -s, the download speed.
 #
 # The measurements run in background processes that write their results to
 # a private temporary directory (in memory on Linux), removed on exit; the
@@ -29,15 +29,14 @@
 #   Run with -c to list the tools that are missing.
 #
 # Usage:
-#   coSHLink.sh [-lnc] [-L file] [-8 | -t]
+#   coSHLink.sh [-lsc] [-L file] [-8 | -t]
 #   coSHLink.sh -i | -u | -r
 #   coSHLink.sh -v | -h
 #
 #   -l, --loop        Run until q or Ctrl+C is pressed. Without it, stop
 #                     after RUN_S seconds.
-#   -n, --no-speed    Do not measure the download speed. Without it, it is
-#                     measured every SPEED_S seconds (a minute after a failed
-#                     test), and each test downloads SPEED_MB MB.
+#   -s, --speed       Measure the download speed every SPEED_S seconds. Each
+#                     test downloads up to SPEED_MB MB.
 #   -c, --check       Read every source once, print the results and exit.
 #   -L, --log file    Append the errors of the background measurements to
 #                     file.
@@ -54,7 +53,7 @@
 #   -v, --version     Print the version.
 #   -h, --help        Print this help.
 #
-#   Short options can be combined: -ln is -l -n.
+#   Short options can be combined: -ls is -l -s.
 #
 #   macOS 15 and later hide the Wi-Fi name from scripts. To show it to every
 #   program, across reboots:
@@ -64,8 +63,8 @@
 #
 #   Privacy: the public IP is asked to ipinfo.io (IP_URL) every IP_S seconds
 #   and whenever the network changes, so that service learns where the
-#   computer is. api.ipify.org is asked only when ipinfo.io fails. Each
-#   speed test downloads from speed.cloudflare.com.
+#   computer is. api.ipify.org is asked only when ipinfo.io fails. With
+#   -s, each speed test downloads from speed.cloudflare.com.
 #
 # shellcheck disable=SC2086  # unquoted on purpose: numbers and lists of PIDs
 #
@@ -118,12 +117,12 @@ IP_URL=https://ipinfo.io/json
 IP_URL2=https://api.ipify.org
 IP_S=300                           # seconds between public IP queries
 
-# Download speed (off with -n): one download of SPEED_MB MB, at most SPEED_MAX_S
+# Download speed (-s): one download of SPEED_MB MB, at most SPEED_MAX_S
 # seconds long, every SPEED_S seconds
 SPEED_URL="https://speed.cloudflare.com/__down?bytes="
 SPEED_MB=25
 SPEED_MAX_S=15
-SPEED_S=600
+SPEED_S=15
 
 # Status box title (ASCII, up to 11 characters)
 APP=coSHLink
@@ -140,12 +139,12 @@ BUILD="build 3"
 #
 
 # Read the command-line options into LOOP, CHECK, SPEED_ON, COLOR_MODE, LOG
-# and ACTION. Combined short options (-ln) are split first.
+# and ACTION. Combined short options (-ls) are split first.
 parse_args() {
   ACTION=""
   LOOP=0
   CHECK=0
-  SPEED_ON=1
+  SPEED_ON=0
   COLOR_MODE=auto
   LOG=/dev/null
   while (( $# )); do
@@ -155,7 +154,7 @@ parse_args() {
     case $1 in
       -l|--loop)      LOOP=1 ;;
       -c|--check)     CHECK=1 ;;
-      -n|--no-speed)  SPEED_ON=0 ;;
+      -s|--speed)     SPEED_ON=1 ;;
       -L|--log)       [[ -n $2 ]] || { echo "${0##*/}: $1 needs a file" >&2; exit 2; }
                       LOG=$2; shift ;;
       -8|--256)       COLOR_MODE=256 ;;
@@ -1124,9 +1123,8 @@ speed_test() {
   if [[ $b =~ ^[0-9]+$ ]] && (( b > 0 )); then DL_KBPS=$(( b * 8 / 1000 )); else DL_KBPS=-1; fi
 }
 
-# Background loop: write "round kbit/s" to $RES.speed every SPEED_S seconds,
-# or a minute after a failed test (0 kbit/s while measuring). $TMPD/busy
-# exists during the download.
+# Background loop: write "round kbit/s" to $RES.speed every SPEED_S seconds
+# (0 kbit/s while measuring). $TMPD/busy exists during the download.
 speed_checker() {
   local seq=0
   bg_init
@@ -1137,7 +1135,7 @@ speed_checker() {
     speed_test; (( seq++ ))
     rm -f "$TMPD/busy"
     write_file "$RES.speed" "$seq $DL_KBPS"
-    if (( DL_KBPS < 0 )); then nap 60; else nap $SPEED_S; fi
+    nap $SPEED_S
   done
 }
 
@@ -1631,7 +1629,7 @@ render_info() {
     if (( CGNAT )); then
       blink $(( AMBER + 8 )) $(( AMBER + 3 )); text 4 $(( INFO_C + 2 )) "Possible CG-NAT" "${RAMP[BL]}"
     fi
-    # download speed (off with -n)
+    # download speed (-s)
     if (( SPEED_ON )); then
       clear_cells 5 $INFO_C 33
       put 5 $INFO_C "↓" "$LABEL_COLOR"
@@ -1865,13 +1863,13 @@ main_loop() {
 # ============================================================================
 #
 
-USAGE="Usage: ${0##*/} [-lnc] [-L file] [-8 | -t]
+USAGE="Usage: ${0##*/} [-lsc] [-L file] [-8 | -t]
        ${0##*/} -i | -u | -r
        ${0##*/} -v | -h
 
   -l, --loop        run until q or Ctrl+C is pressed (otherwise $RUN_S s)
-  -n, --no-speed    do not measure the download speed (by default every
-                    $SPEED_S s, $SPEED_MB MB each time: mind a metered connection)
+  -s, --speed       measure the download speed every $SPEED_S s (up to $SPEED_MB MB
+                    each time: mind a metered connection)
   -c, --check       read every source once, print the results and exit
   -L, --log file    append the errors of the background measurements to file
   -8, --256         use 256 colours
@@ -1883,7 +1881,7 @@ USAGE="Usage: ${0##*/} [-lnc] [-L file] [-8 | -t]
   -h, --help        print this help"
 # When sourced (". coSHLink.sh"), the script only defines its functions and
 # settings; the options are read and the animation starts only when run.
-LOOP=0; CHECK=0; SPEED_ON=1; COLOR_MODE=auto; LOG=/dev/null; ACTION=""
+LOOP=0; CHECK=0; SPEED_ON=0; COLOR_MODE=auto; LOG=/dev/null; ACTION=""
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then parse_args "$@"; fi
 
 case $OSTYPE in
