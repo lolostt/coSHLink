@@ -50,7 +50,7 @@
 #   -u, --update      Download the latest version from UPDATE_URL and
 #                     install it. A private repository needs GITHUB_TOKEN.
 #   -r, --uninstall   Remove what --install added.
-#   -v, --version     Print the version.
+#   -v, --version     Print the version and its date.
 #   -h, --help        Print this help.
 #
 #   Short options can be combined: -ls is -l -s.
@@ -134,6 +134,7 @@ MAKER="www.sleepingcoconut.com"
 MAKER_URL=https://sleepingcoconut.com    # opened by clicking MAKER
 YEAR=2026
 BUILD="build 4"
+BUILD_DATE=2026-11-12                # date of the build's tag, printed by -v
 
 #
 # ============================================================================
@@ -165,7 +166,7 @@ parse_args() {
       -i|--install)   ACTION=install ;;
       -u|--update)    ACTION=update ;;
       -r|--uninstall) ACTION=uninstall ;;
-      -v|--version)   echo "$APP $BUILD"; exit 0 ;;
+      -v|--version)   echo "$APP $BUILD ($BUILD_DATE)"; exit 0 ;;
       -h|--help)      echo "$USAGE"; exit 0 ;;
       *) echo "${0##*/}: unknown option '$1'" >&2
          echo "$USAGE" >&2
@@ -1906,7 +1907,7 @@ USAGE="Usage: ${0##*/} [-lsc] [-L file] [-8 | -t]
   -i, --install     install for this user as the command \"$INSTALL_NAME\"
   -u, --update      download the latest version and install it
   -r, --uninstall   remove what --install added
-  -v, --version     print the version
+  -v, --version     print the version and its date
   -h, --help        print this help"
 # When sourced (". coSHLink.sh"), the script only defines its functions and
 # settings; the options are read and the animation starts only when run.

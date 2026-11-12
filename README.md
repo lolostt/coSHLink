@@ -144,7 +144,7 @@ If you run the script or a launcher from a folder, delete the files.
 | `-i`  | `--install`   | Install it as the command `coshlink`.                           |
 | `-u`  | `--update`    | Download the latest version from GitHub and install it.         |
 | `-r`  | `--uninstall` | Remove what `--install` added.                                  |
-| `-v`  | `--version`   | Print the version.                                              |
+| `-v`  | `--version`   | Print the version and its date.                                 |
 | `-h`  | `--help`      | Print the help.                                                 |
 
 Short options can be combined: `-ls` is `-l -s`. Thresholds, ping targets,
