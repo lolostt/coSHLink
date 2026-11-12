@@ -1146,7 +1146,11 @@ median() {
   local r i
   for r; do                          # insertion sort: at most PINGS values
     (( r < 0 )) && continue
-    for (( i = ${#ok[@]}; i > 0 && ok[i-1] > r; i-- )); do ok[i]=${ok[i-1]}; done
+    # The comparison stays out of the loop test: bash 3.2 would read ok[-1]
+    for (( i = ${#ok[@]}; i > 0; i-- )); do
+      (( ok[i-1] > r )) || break
+      ok[i]=${ok[i-1]}
+    done
     ok[i]=$r
   done
   i=${#ok[@]}; MED=-1
