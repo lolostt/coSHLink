@@ -221,7 +221,7 @@ offer_wifi_name() {
 # INSTALL_NAME, put that folder in the PATH if needed and, on Windows, add a
 # .cmd for PowerShell and cmd. Running it again changes nothing.
 install_app() {
-  local dest=$INSTALL_DIR/$INSTALL_NAME src=${1:-${BASH_SOURCE[0]}} cmd
+  local dest=$INSTALL_DIR/$INSTALL_NAME src=${1:-${BASH_SOURCE[0]}} cmd git_root
   mkdir -p "$INSTALL_DIR" || { echo "${0##*/}: cannot create $INSTALL_DIR" >&2; exit 1; }
   if [[ $src -ef $dest ]] ||
      { [[ -f $dest ]] && [[ $(cksum < "$src") == "$(cksum < "$dest")" ]]; }; then
@@ -244,8 +244,9 @@ install_app() {
   if [[ $OS == win ]]; then
     win_cmd_file
     if [[ -n $CMD_FILE ]]; then
+      git_root=$(cygpath -w /); git_root=${git_root%\\}   # drop the trailing backslash
       printf -v cmd '@echo off\r\nrem %s\r\nset CHERE_INVOKING=1\r\n"%s" -l "%s" %%*\r\n' \
-        "$CMD_MARK" "$(cygpath -w /)\bin\bash.exe" "$(cygpath -w "$dest")"
+        "$CMD_MARK" "$git_root\bin\bash.exe" "$(cygpath -w "$dest")"
       if ! [[ -f $CMD_FILE && "$(< "$CMD_FILE")"$'\n' == "$cmd" ]]; then
         printf '%s' "$cmd" > "$CMD_FILE" ||
           { echo "${0##*/}: cannot write $CMD_FILE" >&2; exit 1; }
