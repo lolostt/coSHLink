@@ -49,6 +49,9 @@
 #                     Wi-Fi name. Running it again changes nothing.
 #   -u, --update      Download the latest version from UPDATE_URL and
 #                     install it. A private repository needs GITHUB_TOKEN.
+#                     While it runs, coSHLink checks UPDATE_URL for a newer
+#                     build and, if there is one, shows "ⓘ Update available"
+#                     bottom left, a link to UPDATE_INFO.
 #   -r, --uninstall   Remove what --install added.
 #   -v, --version     Print the version and its date.
 #   -h, --help        Print this help.
@@ -64,7 +67,8 @@
 #   Privacy: the public IP is asked to ipinfo.io (IP_URL) every IP_S seconds
 #   and whenever the network changes, so that service learns where the
 #   computer is. api.ipify.org is asked only when ipinfo.io fails. With
-#   -s, each speed test downloads from speed.cloudflare.com.
+#   -s, each speed test downloads from speed.cloudflare.com. GitHub is asked
+#   for the number of the latest build every UPDATE_S seconds.
 #
 # shellcheck disable=SC2086  # unquoted on purpose: numbers and lists of PIDs
 #
@@ -86,6 +90,10 @@ LINK_NAMES=(INTERNET GATEWAY)
 INSTALL_DIR=$HOME/.local/bin
 INSTALL_NAME=coshlink
 UPDATE_URL=https://raw.githubusercontent.com/lolostt/coSHLink/main/coSHLink.sh
+# Seconds between checks of UPDATE_URL for a newer build (0: never), and
+# the page that "Update available" links to
+UPDATE_S=21600
+UPDATE_INFO=https://github.com/lolostt/coSHLink#update
 
 # Latency in ms per link (internet, gateway): amber from WARN, red from CRIT
 LAT_WARN=(100 30)
@@ -262,20 +270,26 @@ install_app() {
   echo "Run it with: $INSTALL_NAME -l (in a new terminal if the PATH changed)"
 }
 
+# github_get FILE [BYTES]: download UPDATE_URL to FILE, only its first BYTES
+# if given. GITHUB_TOKEN, if set, is sent through curl's standard input,
+# never on its command line.
+github_get() {
+  if [[ -n $GITHUB_TOKEN ]]; then
+    printf 'header = "Authorization: token %s"\n' "$GITHUB_TOKEN" |
+      curl -fsSL -m 30 ${2:+-r0-$(( $2 - 1 ))} -K - -o "$1" "$UPDATE_URL"
+  else
+    curl -fsSL -m 30 ${2:+-r0-$(( $2 - 1 ))} -o "$1" "$UPDATE_URL" < /dev/null
+  fi
+}
+
 # --update: download the latest version from UPDATE_URL, check that it is a
-# whole coSHLink script, and install it. GITHUB_TOKEN, if set, is sent
-# through curl's standard input, never on its command line.
+# whole coSHLink script, and install it.
 update_app() {
   local tmp old new
   tmp=$(mktemp "${TMPDIR:-/tmp}/coSHLink.XXXXXX") ||
     { echo "${0##*/}: cannot create a temporary file" >&2; exit 1; }
   trap 'rm -f "$tmp"' EXIT
-  if [[ -n $GITHUB_TOKEN ]]; then
-    printf 'header = "Authorization: token %s"\n' "$GITHUB_TOKEN" |
-      curl -fsSL -m 30 -K - -o "$tmp" "$UPDATE_URL"
-  else
-    curl -fsSL -m 30 -o "$tmp" "$UPDATE_URL"
-  fi || {
+  github_get "$tmp" || {
     echo "${0##*/}: cannot download $UPDATE_URL" >&2
     [[ -n $GITHUB_TOKEN ]] || echo "If the repository is private, set GITHUB_TOKEN." >&2
     exit 1
@@ -593,7 +607,7 @@ make_tmp() {
   TMPD=$(mktemp -d "$base/coSHLink.XXXXXX" 2>/dev/null) || {
     TMPD=""; echo "${0##*/}: cannot create a temporary directory" >&2; exit 1; }
   RES=$TMPD/results
-  : > "$RES"; : > "$RES.dns"; : > "$RES.ip"; : > "$RES.wifi"; : > "$RES.speed"
+  : > "$RES"; : > "$RES.dns"; : > "$RES.ip"; : > "$RES.wifi"; : > "$RES.speed"; : > "$RES.update"
   MAIN_PID=$$
 }
 
@@ -1154,6 +1168,31 @@ speed_checker() {
   done
 }
 
+# latest_build: set NEW_BUILD to the build number at the top of UPDATE_URL
+# (empty if it cannot be read). Only the first 1 KB is downloaded.
+latest_build() {
+  local ln
+  NEW_BUILD=""
+  github_get "$TMPD/update.dl" 1024 > /dev/null 2>&1 & wait $!
+  ln=$(grep -m 1 '^# Build:' "$TMPD/update.dl" 2>/dev/null)
+  ln=${ln##* }
+  [[ $ln =~ ^[0-9]+$ ]] && NEW_BUILD=$ln
+  rm -f "$TMPD/update.dl"
+}
+
+# Background loop: write the latest build number to $RES.update every
+# UPDATE_S seconds, or every 10 minutes while it cannot be read.
+update_checker() {
+  bg_init
+  nap 5                          # after the first pings
+  while kill -0 "$MAIN_PID" 2>/dev/null; do
+    latest_build
+    if [[ -n $NEW_BUILD ]]; then write_file "$RES.update" "$NEW_BUILD"; nap $UPDATE_S
+    else nap 600
+    fi
+  done
+}
+
 # median N...: set MED to the median of the values that are not negative
 # (-1 if none).
 median() {
@@ -1340,6 +1379,7 @@ run_check() {
     ping_parse "$TMPD/p"; echo "ping $h: ${P_RTT[*]} ms, jitter $P_JIT ms"
   done
   if (( SPEED_ON )); then speed_test; echo "download speed: $DL_KBPS kbit/s"; fi
+  latest_build; echo "build: $OWN_BUILD, latest: ${NEW_BUILD:-unknown}"
   echo "Background process, 2 rounds of $CHECK_S s:"
   ( checker 2 ) < /dev/null > /dev/null 2>> "$LOG" &
   wait $!
@@ -1360,6 +1400,10 @@ start_checkers() {
   CHECK_PID="$CHECK_PID $!"
   if (( SPEED_ON )); then
     speed_checker < /dev/null > /dev/null 2>> "$LOG" 3<&- 4>&- 5<&- &
+    CHECK_PID="$CHECK_PID $!"
+  fi
+  if (( UPDATE_S > 0 )); then
+    update_checker < /dev/null > /dev/null 2>> "$LOG" 3<&- 4>&- 5<&- &
     CHECK_PID="$CHECK_PID $!"
   fi
 }
@@ -1399,6 +1443,8 @@ results() {
     (( ${#a[@]} >= 2 )) && ints "${a[W_SEQ]} ${a[W_STATE]} ${a[W_PAD]:-0} ${a[W_SECLV]:-0} ${a[W_SIG]:-0} ${a[W_NOISE]:-0}" &&
       W=("${a[@]}")
   fi
+  ln=""; read -r ln 2>/dev/null < "$RES.update"
+  [[ $ln =~ ^[0-9]+$ && $ln != "$UPD" ]] && { UPD=$ln; build_footer; }
   RD=()
   read -r -a RD 2>/dev/null < "$RES.speed"
   (( ${#RD[@]} == 2 )) && ints "${RD[*]}" && { SPD_SEQ=${RD[0]}; SPD=${RD[1]}; }
@@ -1512,6 +1558,19 @@ reserve_lines() {
 # spin OFFSET: set SP to the current spinner frame, shifted by OFFSET.
 spin() {
   SP=${SPIN[$(( (T / SPIN_MS + $1) % ${#SPIN[@]} ))]}
+}
+
+# Set BUILD_LINE to the footer: "ⓘ Update available" on the left when
+# OWN_BUILD is older than UPD, and "MAKER · YEAR · BUILD" on the right. Both
+# are links (OSC 8) where the terminal supports them, plain text otherwise.
+build_footer() {
+  local left="" w=0
+  if [[ $OWN_BUILD =~ ^[0-9]+$ && $UPD =~ ^[0-9]+$ ]] && (( UPD > OWN_BUILD )); then
+    left="${SP2}${UPDATE_COLOR}${ESC}]8;;${UPDATE_INFO}${ESC}\\ⓘ Update available${ESC}]8;;${ESC}\\${BUILD_COLOR}"
+    w=20
+  fi
+  printf -v BUILD_LINE '%*s' $(( COLS - 4 - ${#YEAR} - ${#BUILD} - ${#MAKER} - w )) ''
+  BUILD_LINE="${left}${BUILD_LINE}${ESC}]8;;${MAKER_URL}${ESC}\\${MAKER}${ESC}]8;;${ESC}\\ · $YEAR · $BUILD"
 }
 
 # to_line LINE: add to out the cursor move from line CUR to LINE.
@@ -1823,6 +1882,7 @@ flush_frame() {
     for (( j = 0; j < NL; j++ )); do out+="${ESC}[G${PANEL[j]}"$'\n'; PANEL_PREV[j]=${PANEL[j]}; done
     out+="${ESC}[G${SP2}${BOX_COLOR}${TBOX_BOT}${RESET}${ESC}[K"$'\n'
     out+="${ESC}[G${BUILD_COLOR}${BUILD_LINE}${RESET}${ESC}[K"
+    BUILD_PREV=$BUILD_LINE
   else
     # line 0 is the blank line on top, map row r is line r + 1
     out="${ESC}[G${ESC}[$(( LINES_N - 1 ))A"; CUR=0; last=""
@@ -1849,6 +1909,10 @@ flush_frame() {
       out+="${ESC}[G${PANEL[j]}"
     done
     to_line $(( LINES_N - 1 ))
+    if [[ $BUILD_LINE != "$BUILD_PREV" ]]; then
+      BUILD_PREV=$BUILD_LINE
+      out+="${ESC}[G${BUILD_COLOR}${BUILD_LINE}${RESET}${ESC}[K"
+    fi
   fi
   CHG=()
   printf '%s' "$out"
@@ -1925,6 +1989,8 @@ case $COMPUTER in
   *)      IS_TOWER=1; [[ $OS == mac ]] && IS_TOWER=0 ;;
 esac
 NL=2                                 # links: 0 internet, 1 gateway
+OWN_BUILD=$(grep -m 1 '^# Build:' "${BASH_SOURCE[0]}" 2>/dev/null)
+OWN_BUILD=${OWN_BUILD##* }           # this script's build number
 
 # Marks of what --install writes, so --uninstall removes only that
 PATH_MARK="# added by coSHLink --install"
@@ -1982,6 +2048,7 @@ rgb 120 124 135; BOX_COLOR="${ESC}[0;${FG}m"
 rgb 235 238 245; NAME_COLOR="${ESC}[0;1;${FG}m"
 rgb 140 140 150; LABEL_COLOR="${ESC}[0;${FG}m"
 rgb 85 88 98; BUILD_COLOR="${ESC}[0;${FG}m"
+rgb 80 160 255; UPDATE_COLOR="${ESC}[0;${FG}m"
 rgb 60 62 70; DIM_COLOR="${ESC}[0;${FG}m"
 # Computer screen: faint lines of text, the one being typed a little
 # brighter, and the cursor
@@ -2154,9 +2221,8 @@ WBOX_BOT+="┘"
 # Screen lines: a blank one on top, the map, a blank one, the panel header
 # and rows, and the footer
 LINES_N=$(( ROWS + 5 + NL ))
-# MAKER is a link (OSC 8) where the terminal supports it, plain text otherwise
-printf -v BUILD_LINE '%*s' $(( COLS - 4 - ${#YEAR} - ${#BUILD} - ${#MAKER} )) ''
-BUILD_LINE+="${ESC}]8;;${MAKER_URL}${ESC}\\${MAKER}${ESC}]8;;${ESC}\\ · $YEAR · $BUILD"
+UPD=""                                # latest build found by update_checker
+build_footer
 # Traffic box, left of the panel rows, from the header line to the blank
 # line under the rows. Both links read the same counters.
 TBOX_TOP="┌─ ${NAME_COLOR}TRAFFIC${BOX_COLOR} ──────┐"
