@@ -282,8 +282,8 @@ update_app() {
   fi
   old=$(grep -m 1 '^# Build:' "$INSTALL_DIR/$INSTALL_NAME" 2>/dev/null)
   new=$(grep -m 1 '^# Build:' "$tmp")
-  echo "Installed: ${old:-none}, latest: $new" | sed 's/# //g'
   old=${old##* } new=${new##* }
+  echo "Installed: ${old:+build }${old:-none}, latest: build $new"
   if [[ $old =~ ^[0-9]+$ && $new =~ ^[0-9]+$ ]] && (( new < old )); then
     echo "The installed build is newer than the latest one; nothing changed."
     return 0
