@@ -247,7 +247,7 @@ install_app() {
       git_root=$(cygpath -w /); git_root=${git_root%\\}   # drop the trailing backslash
       printf -v cmd '@echo off\r\nrem %s\r\nset CHERE_INVOKING=1\r\n"%s" -l "%s" %%*\r\n' \
         "$CMD_MARK" "$git_root\bin\bash.exe" "$(cygpath -w "$dest")"
-      if ! [[ -f $CMD_FILE && "$(< "$CMD_FILE")"$'\n' == "$cmd" ]]; then
+      if ! [[ -f $CMD_FILE && $(cksum < "$CMD_FILE") == "$(printf '%s' "$cmd" | cksum)" ]]; then
         printf '%s' "$cmd" > "$CMD_FILE" ||
           { echo "${0##*/}: cannot write $CMD_FILE" >&2; exit 1; }
         echo "Installed $CMD_FILE"
