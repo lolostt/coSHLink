@@ -120,9 +120,9 @@ IP_S=300                           # seconds between public IP queries
 # Download speed (-s): one download of SPEED_MB MB, at most SPEED_MAX_S
 # seconds long, every SPEED_S seconds
 SPEED_URL="https://speed.cloudflare.com/__down?bytes="
-SPEED_MB=25
+SPEED_MB=20
 SPEED_MAX_S=15
-SPEED_S=15
+SPEED_S=30
 
 # Status box title (ASCII, up to 11 characters)
 APP=coSHLink
