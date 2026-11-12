@@ -269,7 +269,11 @@ update_app() {
       curl -fsSL -m 30 -K - -o "$tmp" "$UPDATE_URL"
   else
     curl -fsSL -m 30 -o "$tmp" "$UPDATE_URL"
-  fi || { echo "${0##*/}: cannot download $UPDATE_URL" >&2; exit 1; }
+  fi || {
+    echo "${0##*/}: cannot download $UPDATE_URL" >&2
+    [[ -n $GITHUB_TOKEN ]] || echo "If the repository is private, set GITHUB_TOKEN." >&2
+    exit 1
+  }
   if [[ $(head -n 1 "$tmp") != '#!/usr/bin/env bash' ]] ||
      ! grep -q '^# coSHLink$' "$tmp" || ! bash -n "$tmp" 2>/dev/null; then
     echo "${0##*/}: the download is not a valid coSHLink script" >&2; exit 1
@@ -277,6 +281,11 @@ update_app() {
   old=$(grep -m 1 '^# Build:' "$INSTALL_DIR/$INSTALL_NAME" 2>/dev/null)
   new=$(grep -m 1 '^# Build:' "$tmp")
   echo "Installed: ${old:-none}, latest: $new" | sed 's/# //g'
+  old=${old##* } new=${new##* }
+  if [[ $old =~ ^[0-9]+$ && $new =~ ^[0-9]+$ ]] && (( new < old )); then
+    echo "The installed build is newer than the latest one; nothing changed."
+    return 0
+  fi
   install_app "$tmp"
 }
 
