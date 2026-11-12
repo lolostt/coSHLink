@@ -1267,15 +1267,16 @@ needs() {
   find_tools
   echo "tools needed: $NEEDED"
   echo "missing: ${MISSING:-none}"
+  install_hint
+  [[ -z $HINT ]] || echo "  $HINT"
 }
 
-# On Linux, stop before starting if a tool is missing, and say which
-# packages provide them for the package manager found.
-require_tools() {
+# On Linux, set HINT to the command that installs the packages providing
+# the MISSING tools, for the package manager found ("" elsewhere).
+install_hint() {
   local t pkgs="" pm=""
-  [[ $OS == linux ]] || return 0
-  find_tools
-  [[ -n $MISSING ]] || return 0
+  HINT=""
+  [[ $OS == linux && -n $MISSING ]] || return 0
   for pm in apt-get dnf yum zypper pacman apk ""; do
     [[ -n $pm ]] && command -v $pm > /dev/null 2>&1 && break
   done
@@ -1295,15 +1296,25 @@ require_tools() {
     esac
   done
   case $pm in dnf|yum|zypper|pacman) pkgs=${pkgs/iputils-ping/iputils} ;; esac
-  echo "${0##*/}: missing tools: $MISSING"
   case $pm in
-    apt-get) echo "Install them with: sudo apt-get install$pkgs" ;;
-    dnf|yum) echo "Install them with: sudo $pm install$pkgs" ;;
-    zypper)  echo "Install them with: sudo zypper install$pkgs" ;;
-    pacman)  echo "Install them with: sudo pacman -S$pkgs" ;;
-    apk)     echo "Install them with: sudo apk add$pkgs" ;;
-    *)       echo "Install the packages that provide them:$pkgs" ;;
+    apt-get) HINT="Install them with: sudo apt-get install$pkgs" ;;
+    dnf|yum) HINT="Install them with: sudo $pm install$pkgs" ;;
+    zypper)  HINT="Install them with: sudo zypper install$pkgs" ;;
+    pacman)  HINT="Install them with: sudo pacman -S$pkgs" ;;
+    apk)     HINT="Install them with: sudo apk add$pkgs" ;;
+    *)       HINT="Install the packages that provide them:$pkgs" ;;
   esac
+}
+
+# On Linux, stop before starting if a tool is missing, and say which
+# packages provide them.
+require_tools() {
+  [[ $OS == linux ]] || return 0
+  find_tools
+  [[ -n $MISSING ]] || return 0
+  install_hint
+  echo "${0##*/}: missing tools: $MISSING" >&2
+  echo "$HINT" >&2
   exit 1
 }
 

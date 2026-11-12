@@ -180,7 +180,8 @@ time. Avoid it on a metered connection.
   Windows 10 version 2004 or later; without it, the launcher uses mintty,
   included with Git.
 
-Run `./coSHLink.sh -c` to list the tools missing on your computer.
+Run `./coSHLink.sh -c` to list the tools missing on your computer and, on
+Linux, the packages that provide them.
 
 ## Wi-Fi details
 
