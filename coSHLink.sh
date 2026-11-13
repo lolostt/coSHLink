@@ -142,7 +142,7 @@ MAKER="www.sleepingcoconut.com"
 MAKER_URL=https://sleepingcoconut.com    # opened by clicking MAKER
 YEAR=2026
 BUILD="build 5"
-BUILD_DATE=2026-11-12                # date of the build's tag, printed by -v
+BUILD_DATE=2026-11-13                # date of the build's tag, printed by -v
 
 #
 # ============================================================================
