@@ -15,15 +15,15 @@ Wi-Fi network, the local and gateway addresses, the DNS state, the public IP
 address with its location and operator, a possible carrier-grade NAT and,
 optionally, the download speed.
 
-It is a single bash script. It installs nothing and needs no administrator
-rights.
+It is a single bash script. It installs nothing unless you ask it to (`-i`),
+and needs no administrator rights.
 
 ## Contents
 
 - [Three ways to run it](#three-ways-to-run-it)
   - [1. Run the script](#1-run-the-script)
-  - [2. Install it as a command](#2-install-it-as-a-command)
-  - [3. Double-click a launcher](#3-double-click-a-launcher)
+  - [2. Double-click a launcher](#2-double-click-a-launcher)
+  - [3. Install it as a command](#3-install-it-as-a-command)
 - [Update](#update)
 - [Uninstall](#uninstall)
 - [Options](#options)
@@ -49,32 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/lolostt/coSHLink/main/coSHLink.sh -
 
 Press `q` or `Ctrl+C` to quit. Without `-l` it stops after 60 seconds.
 
-### 2. Install it as a command
-
-From the folder holding `coSHLink.sh`:
-
-```sh
-./coSHLink.sh -i
-```
-
-Open a new terminal and run it from any folder:
-
-```sh
-coshlink -l
-```
-
-The installer copies the script to `~/.local/bin/coshlink`. If this folder is
-missing from your `PATH`, it adds one marked line to `~/.zshrc`,
-`~/.bash_profile` or `~/.bashrc`, depending on your shell.
-
-> [!NOTE]
-> 🪟 On Windows the installer also writes `coshlink.cmd` to
-> `%LOCALAPPDATA%\Microsoft\WindowsApps`, so `coshlink -l` works in
-> PowerShell and cmd as well as in Git Bash.
-
-To update or remove it, see [Update](#update) and [Uninstall](#uninstall).
-
-### 3. Double-click a launcher
+### 2. Double-click a launcher
 
 Download the script and the launcher for your system into the same folder,
 and double-click the launcher. It opens an 80x24 window running
@@ -98,6 +73,37 @@ with the latest version.
   ```sh
   for f in coSHLink.sh coSHLink.desktop; do curl -fsSL "https://raw.githubusercontent.com/lolostt/coSHLink/main/$f" -o "$f" && chmod +x "$f"; done
   ```
+
+  The first time, GNOME Files asks you to trust the launcher (right click,
+  **Allow Launching**), and KDE Dolphin asks to make it executable.
+
+### 3. Install it as a command
+
+Download the script as in [1](#1-run-the-script), then, from that folder:
+
+```sh
+./coSHLink.sh -i
+```
+
+Open a new terminal and run it from any folder:
+
+```sh
+coshlink -l
+```
+
+The installer copies the script to `~/.local/bin/coshlink`. If this folder is
+missing from your `PATH`, it adds one marked line to `~/.zshrc`,
+`~/.bash_profile` or `~/.bashrc`, depending on your shell.
+
+> [!NOTE]
+> 🪟 On Windows the installer also writes `coshlink.cmd` to
+> `%LOCALAPPDATA%\Microsoft\WindowsApps`, so `coshlink -l` works in
+> PowerShell and cmd as well as in Git Bash.
+
+🍎 On macOS the installer also offers to show the Wi-Fi name (see
+[Wi-Fi details](#wi-fi-details)).
+
+To update or remove it, see [Update](#update) and [Uninstall](#uninstall).
 
 ## Update
 
