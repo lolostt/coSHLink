@@ -6,9 +6,9 @@
 # Copyright (C) 2026 Sleeping Coconut https://sleepingcoconut.com
 # Licensed under the MIT License.
 #
-# A live map of your network drawn in an 80x24 terminal. It monitors network
-# links, latency, jitter, packet loss, DNS, Wi-Fi, public IP and more, all in
-# a single Bash script.
+# A live map of the network path from your computer to the internet, drawn in
+# an 80×24 terminal. It monitors network links, latency, jitter, packet loss,
+# DNS, Wi-Fi, public IP and more, all in a single Bash script.
 #
 # Requirements:
 #   macOS: nothing to install.
