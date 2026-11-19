@@ -6,19 +6,9 @@
 # Copyright (C) 2026 Sleeping Coconut https://sleepingcoconut.com
 # Licensed under the MIT License.
 #
-# coSHLink displays a live map of the network path from this computer to the
-# internet. The computer, the gateway and the internet are drawn as a diagram
-# whose links pulse in green, amber or red while they are up, degraded or
-# down; the link to the gateway is dashed over Wi-Fi and solid over a cable.
-# A panel lists the traffic, latency, jitter and loss of each link. Around
-# the map it shows the Wi-Fi network, the local and gateway addresses, the
-# state of the DNS, the public IP address with its location and operator, a
-# possible carrier-grade NAT and, with -s, the download speed.
-#
-# The measurements run in background processes that write their results to
-# a private temporary directory (in memory on Linux), removed on exit; the
-# display reads those files and never waits on the network. The terminal
-# must be at least 80x24.
+# A live map of your network drawn in an 80x24 terminal. It monitors network
+# links, latency, jitter, packet loss, DNS, Wi-Fi, public IP and more, all in
+# a single Bash script.
 #
 # Requirements:
 #   macOS: nothing to install.
