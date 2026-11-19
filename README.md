@@ -138,7 +138,7 @@ time. Avoid it on a metered connection.
 | System        | Minimum                                             | Needs                                                         |
 |---------------|-----------------------------------------------------|---------------------------------------------------------------|
 | 🍎 macOS      | macOS 12 Monterey                                   | Nothing: every tool it uses ships with macOS.                 |
-| 🐧 Linux      | bash 5 (Ubuntu 20.04, Debian 10, Fedora 30, RHEL 9) | `iproute2`, `ping`, `curl`, `nslookup`, `iconv`, `traceroute` |
+| 🐧 Linux      | bash 3.2                                            | `iproute2`, `ping`, `curl`, `nslookup`, `iconv`, `traceroute`, and `perl` before bash 5 |
 | 🪟 Windows    | Windows 10                                          | [Git for Windows](https://gitforwindows.org/), which brings Git Bash. [Windows Terminal](https://learn.microsoft.com/windows/terminal/) is used if installed. |
 
 - 🍎 **macOS.** The script runs on the bash 3.2 shipped with macOS and uses

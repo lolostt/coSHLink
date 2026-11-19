@@ -13,9 +13,9 @@
 # Requirements:
 #   macOS: nothing to install.
 #   Windows: Git Bash (Git for Windows).
-#   Linux: bash, iproute2, ping, curl, nslookup, iconv and traceroute. If
-#   any is missing, coSHLink names the packages to install and exits. The
-#   Wi-Fi details are not shown.
+#   Linux: bash 3.2 or later, iproute2, ping, curl, nslookup, iconv,
+#   traceroute and, before bash 5, perl. If any is missing, coSHLink names
+#   the packages to install and exits. The Wi-Fi details are not shown.
 #   Run with -c to list the tools that are missing.
 #
 # Usage:
