@@ -1,22 +1,13 @@
 # coSHLink
 
-A live map of the network path from your computer to the internet, drawn in
-an 80x24 terminal.
+A live map of your network drawn in an 80x24 terminal.
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/ceb8d2d5-6fa1-4b0f-95f9-9e23c96d77de" alt="coSHLink running with sample data" width="800">
 </p>
 
-coSHLink draws your computer, the gateway and the internet as a diagram. Each
-link pulses green, amber or red as it goes up, degraded or down, and the link
-to the gateway is dashed over Wi-Fi and solid over a cable. A panel lists the
-traffic, latency, jitter and loss of each link. Around the map you see the
-Wi-Fi network, the local and gateway addresses, the DNS state, the public IP
-address with its location and operator, a possible carrier-grade NAT and,
-optionally, the download speed.
-
-It is a single bash script. It installs nothing unless you ask it to (`-i`),
-and needs no administrator rights.
+Monitor network links, latency, jitter, packet loss, DNS, Wi-Fi, public IP
+and more — all in a single Bash script.
 
 ## Contents
 
