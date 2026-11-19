@@ -48,7 +48,7 @@
 #                     for PowerShell and cmd. On macOS, offer to show the
 #                     Wi-Fi name. Running it again changes nothing.
 #   -u, --update      Download the latest version from UPDATE_URL and
-#                     install it. A private repository needs GITHUB_TOKEN.
+#                     install it.
 #                     While it runs, coSHLink checks UPDATE_URL for a newer
 #                     build and, if there is one, shows "ⓘ Update available"
 #                     bottom left, a link to UPDATE_INFO.
@@ -271,15 +271,9 @@ install_app() {
 }
 
 # github_get FILE [BYTES]: download UPDATE_URL to FILE, only its first BYTES
-# if given. GITHUB_TOKEN, if set, is sent through curl's standard input,
-# never on its command line.
+# if given.
 github_get() {
-  if [[ -n $GITHUB_TOKEN ]]; then
-    printf 'header = "Authorization: token %s"\n' "$GITHUB_TOKEN" |
-      curl -fsSL -m 30 ${2:+-r0-$(( $2 - 1 ))} -K - -o "$1" "$UPDATE_URL"
-  else
-    curl -fsSL -m 30 ${2:+-r0-$(( $2 - 1 ))} -o "$1" "$UPDATE_URL" < /dev/null
-  fi
+  curl -fsSL -m 30 ${2:+-r0-$(( $2 - 1 ))} -o "$1" "$UPDATE_URL" < /dev/null
 }
 
 # --update: download the latest version from UPDATE_URL, check that it is a
@@ -291,7 +285,6 @@ update_app() {
   trap 'rm -f "$tmp"' EXIT
   github_get "$tmp" || {
     echo "${0##*/}: cannot download $UPDATE_URL" >&2
-    [[ -n $GITHUB_TOKEN ]] || echo "If the repository is private, set GITHUB_TOKEN." >&2
     exit 1
   }
   if [[ $(head -n 1 "$tmp") != '#!/usr/bin/env bash' ]] ||
