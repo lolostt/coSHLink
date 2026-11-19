@@ -15,6 +15,7 @@ and more — all in a single Bash script.
   - [Method 1: Run the script](#method-1-run-the-script)
   - [Method 2: Double-click a launcher](#method-2-double-click-a-launcher)
   - [Method 3: Install it as a command](#method-3-install-it-as-a-command)
+- [What it shows](#what-it-shows)
 - [Options](#options)
 - [Requirements](#requirements)
 - [Wi-Fi details](#wi-fi-details)
@@ -94,6 +95,28 @@ missing from your `PATH`, it adds one marked line to `~/.zshrc`,
 [Wi-Fi details](#wi-fi-details)).
 
 To update or remove it, see [Update](#update) and [Uninstall](#uninstall).
+
+## What it shows
+
+| What | Where | Details |
+|------|-------|---------|
+| Links | Map | This computer, the gateway and the internet. Each link pulses green, amber or red as it goes up, degraded or down |
+| Connection type | Map | The link to the gateway is dashed over Wi-Fi and solid over a cable |
+| Local IP | Under the computer | The address of this computer |
+| Gateway IP | Under the gateway | The address of the router |
+| DNS | Right of the globe | ok, partial or fail, after resolving two names every 5 seconds, and the server in use: the gateway, Cloudflare, Google, Quad9, OpenDNS or its address |
+| Public IP | Right of the globe | The address, with its country, city and operator |
+| Carrier-grade NAT | Right of the globe | "Possible CG-NAT" when a hop after the router is in 100.64.0.0/10 |
+| Download speed | Right of the globe | With `-s`, in Mb/s, measured every 30 seconds |
+| Wi-Fi network | Wi-Fi box, right | The name, or "(name hidden)" (see [Wi-Fi details](#wi-fi-details)). Hidden over a cable |
+| Wi-Fi signal | Wi-Fi box | 4 bars, the signal in dBm and the signal to noise ratio |
+| Wi-Fi rate and mode | Wi-Fi box | The transmit rate in Mb/s and the mode, such as 802.11ax |
+| Wi-Fi security and band | Wi-Fi box | WPA2, WPA3 or OWE; amber if weak (WPA, WEP), blinking red if open. Then the band in GHz and the channel |
+| Traffic | TRAFFIC box, bottom left | A meter and the speed of the network interface, in or out, whichever is higher |
+| Link state | Panel, one row per link | UP, DEGRADED, DOWN, or NO PING for a gateway that ignores pings while the internet answers |
+| Ping history | Panel | A sparkline of the latest latencies, newest on the right |
+| Latency, jitter and loss | Panel | In ms, ms and %, for the gateway and for the internet (1.1.1.1 or 8.8.8.8, whichever answers better) |
+| Updates | Footer, left | **ⓘ Update available** when GitHub has a newer build (see [Update](#update)) |
 
 ## Options
 
