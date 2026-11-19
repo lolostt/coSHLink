@@ -1,6 +1,6 @@
 # coSHLink
 
-A live map of your network drawn in an 80x24 terminal.
+A live map of the network path from your computer to the internet, drawn in an 80×24 terminal.
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/ceb8d2d5-6fa1-4b0f-95f9-9e23c96d77de" alt="coSHLink running with sample data" width="800">
