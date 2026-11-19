@@ -54,11 +54,10 @@
 #   To hide it again:
 #     sudo ipconfig setverbose 0
 #
-#   Privacy: the public IP is asked to ipinfo.io (IP_URL) every IP_S seconds
-#   and whenever the network changes, so that service learns where the
-#   computer is. api.ipify.org is asked only when ipinfo.io fails. With
-#   -s, each speed test downloads from speed.cloudflare.com. GitHub is asked
-#   for the number of the latest build every UPDATE_S seconds.
+#   Privacy: besides pings, traceroutes and DNS lookups, coSHLink only
+#   connects to ipinfo.io (IP_URL, or IP_URL2 if it fails) for the public
+#   IP, GitHub (UPDATE_URL) for the latest build and, with -s,
+#   speed.cloudflare.com.
 #
 # shellcheck disable=SC2086  # unquoted on purpose: numbers and lists of PIDs
 #

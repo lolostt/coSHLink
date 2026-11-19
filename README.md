@@ -220,13 +220,12 @@ added, and leaves anything else in those files as it was.
 
 ## Privacy
 
-To show the public IP with its location and operator, coSHLink asks
-[ipinfo.io](https://ipinfo.io) every 5 minutes and whenever the network
-changes, so this service learns roughly where the computer is.
-[api.ipify.org](https://www.ipify.org) is asked only if ipinfo.io fails. With
-`-s`, each speed test downloads from `speed.cloudflare.com`. To know
-whether there is a newer build, it reads the first lines of `coSHLink.sh`
-on GitHub at start and every 6 hours. Nothing else leaves the computer.
+Besides pings, traceroutes and DNS lookups, coSHLink only connects to:
+
+- [ipinfo.io](https://ipinfo.io), for the public IP with its location and
+  operator, or [api.ipify.org](https://www.ipify.org) if it fails.
+- GitHub, to check for a newer build.
+- `speed.cloudflare.com`, with `-s`.
 
 ## License
 
