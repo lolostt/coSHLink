@@ -21,9 +21,9 @@ and needs no administrator rights.
 ## Contents
 
 - [Three ways to run it](#three-ways-to-run-it)
-  - [1. Run the script](#1-run-the-script)
-  - [2. Double-click a launcher](#2-double-click-a-launcher)
-  - [3. Install it as a command](#3-install-it-as-a-command)
+  - [Method 1: Run the script](#method-1-run-the-script)
+  - [Method 2: Double-click a launcher](#method-2-double-click-a-launcher)
+  - [Method 3: Install it as a command](#method-3-install-it-as-a-command)
 - [Update](#update)
 - [Uninstall](#uninstall)
 - [Options](#options)
@@ -38,7 +38,7 @@ and needs no administrator rights.
 - 🍎 **macOS** and 🐧 **Linux**: use any terminal.
 - 🪟 **Windows**: use Git Bash (see [Requirements](#requirements)).
 
-### 1. Run the script
+### Method 1: Run the script
 
 Download it and start it from the same folder:
 
@@ -49,7 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/lolostt/coSHLink/main/coSHLink.sh -
 
 Press `q` or `Ctrl+C` to quit. Without `-l` it stops after 60 seconds.
 
-### 2. Double-click a launcher
+### Method 2: Double-click a launcher
 
 Download the script and the launcher for your system into the same folder,
 and double-click the launcher. It opens an 80x24 window running
@@ -77,12 +77,12 @@ with the latest version.
   The first time, GNOME Files asks you to trust the launcher (right click,
   **Allow Launching**), and KDE Dolphin asks to make it executable.
 
-### 3. Install it as a command
+### Method 3: Install it as a command
 
-Download the script as in [1](#1-run-the-script), then, from that folder:
+Download the script and install it:
 
 ```sh
-./coSHLink.sh -i
+curl -fsSL https://raw.githubusercontent.com/lolostt/coSHLink/main/coSHLink.sh -o coSHLink.sh && chmod +x coSHLink.sh && ./coSHLink.sh -i
 ```
 
 Open a new terminal and run it from any folder:
