@@ -15,12 +15,11 @@ and more — all in a single Bash script.
   - [Method 1: Run the script](#method-1-run-the-script)
   - [Method 2: Double-click a launcher](#method-2-double-click-a-launcher)
   - [Method 3: Install it as a command](#method-3-install-it-as-a-command)
-- [Update](#update)
-- [Uninstall](#uninstall)
 - [Options](#options)
 - [Requirements](#requirements)
 - [Wi-Fi details](#wi-fi-details)
-- [How it works](#how-it-works)
+- [Update](#update)
+- [Uninstall](#uninstall)
 - [Privacy](#privacy)
 - [License](#license)
 
@@ -95,42 +94,6 @@ missing from your `PATH`, it adds one marked line to `~/.zshrc`,
 [Wi-Fi details](#wi-fi-details)).
 
 To update or remove it, see [Update](#update) and [Uninstall](#uninstall).
-
-## Update
-
-When a newer build is on GitHub, coSHLink shows **ⓘ Update available** at
-the bottom left. In terminals that support links, clicking it opens this
-section.
-
-If you installed it as a command, download the latest version from GitHub
-and install it over the old one:
-
-```sh
-coshlink -u
-```
-
-It checks that the download is a whole coSHLink script before replacing
-anything, and prints the build installed and the latest one.
-
-If you run the script or a launcher from a folder, download it again with
-the same command you used the first time.
-
-## Uninstall
-
-If you installed it as a command:
-
-```sh
-coshlink -r
-```
-
-This removes `~/.local/bin/coshlink`, the `PATH` line added to your shell
-startup file and, on Windows, `coshlink.cmd`. It removes only what `-i`
-added, and leaves anything else in those files as it was.
-
-🍎 If you ran `sudo ipconfig setverbose 1`, undo it with
-`sudo ipconfig setverbose 0`.
-
-If you run the script or a launcher from a folder, delete the files.
 
 ## Options
 
@@ -210,12 +173,35 @@ rest of the map works the same: the gateway, the addresses and the traffic
 come from `ip route` and `/sys`, and the link to the gateway is still drawn
 dashed over Wi-Fi.
 
-## How it works
+## Update
 
-The measurements run in background processes, so drawing never waits for the
-network. Their results go to a private temporary directory, readable only by
-your user and removed on exit. On Linux it lives in `/dev/shm`, in memory,
-unless `TMPDIR` is set.
+If you run the script or a launcher from a folder, download it again with
+the same command you used the first time.
+
+If you installed it as a command, download the latest version from GitHub
+and install it over the old one:
+
+```sh
+coshlink -u
+```
+
+## Uninstall
+
+If you run the script or a launcher from a folder, you can safely delete the
+files.
+
+If you installed it as a command:
+
+```sh
+coshlink -r
+```
+
+This removes `~/.local/bin/coshlink`, the `PATH` line added to your shell
+startup file and, on Windows, `coshlink.cmd`. It removes only what `-i`
+added, and leaves anything else in those files as it was.
+
+🍎 If you ran `sudo ipconfig setverbose 1`, undo it with
+`sudo ipconfig setverbose 0`.
 
 ## Privacy
 
