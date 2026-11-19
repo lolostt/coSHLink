@@ -65,9 +65,6 @@ with the latest version.
   for f in coSHLink.sh coSHLink.desktop; do curl -fsSL "https://raw.githubusercontent.com/lolostt/coSHLink/main/$f" -o "$f" && chmod +x "$f"; done
   ```
 
-  The first time, GNOME Files asks you to trust the launcher (right click,
-  **Allow Launching**), and KDE Dolphin asks to make it executable.
-
 ### Method 3: Install it as a command
 
 Download the script and install it:
@@ -90,11 +87,6 @@ missing from your `PATH`, it adds one marked line to `~/.zshrc`,
 > 🪟 On Windows the installer also writes `coshlink.cmd` to
 > `%LOCALAPPDATA%\Microsoft\WindowsApps`, so `coshlink -l` works in
 > PowerShell and cmd as well as in Git Bash.
-
-🍎 On macOS the installer also offers to show the Wi-Fi name (see
-[Wi-Fi details](#wi-fi-details)).
-
-To update or remove it, see [Update](#update) and [Uninstall](#uninstall).
 
 ## What it shows
 
